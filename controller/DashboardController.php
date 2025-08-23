@@ -1,5 +1,6 @@
 <?php
 // controller/DashboardController.php
+require_once __DIR__ . '/../model/Database.php';
 require_once __DIR__ . '/AuthController.php';
 require_once __DIR__ . '/../model/User.php';
 

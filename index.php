@@ -54,12 +54,23 @@ try {
                 case 'index':
                     $controllerInstance->index();
                     break;
-                case 'store':
-                    $controllerInstance->store();
-                    break;
                 case 'show':
                     $id = (int)($_GET['id'] ?? 0);
                     $controllerInstance->show($id);
+                    break;
+                case 'form':
+                    $id = isset($_GET['id']) ? (int)$_GET['id'] : null;
+                    $controllerInstance->form($id);
+                    break;
+                case 'store':
+                    $controllerInstance->store();
+                    break;
+                case 'update':
+                    $controllerInstance->update();
+                    break;
+                case 'delete':
+                    $id = (int)($_GET['id'] ?? 0);
+                    $controllerInstance->delete($id);
                     break;
                 default:
                     $controllerInstance->index();
