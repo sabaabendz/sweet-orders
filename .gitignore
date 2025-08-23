@@ -1,0 +1,21 @@
+# XAMPP / PHP
+/vendor/
+/node_modules/
+/composer.lock
+/phpunit.xml
+/phpunit.xml.dist
+/phpunit/
+/tests/
+/var/
+/tmp/
+/logs/
+/sessions/
+*.log
+*.sql
+*.sqlite
+*.db
+*.bak
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
