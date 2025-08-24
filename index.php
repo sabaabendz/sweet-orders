@@ -77,11 +77,6 @@ try {
             }
             break;
 
-        case 'produits':
-            // TODO: Créer ProductController
-            include __DIR__ . '/view/home.php';
-            break;
-
         case 'commandes':
             // TODO: Créer CommandeController  
             include __DIR__ . '/view/home.php';

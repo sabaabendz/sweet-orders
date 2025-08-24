@@ -32,8 +32,7 @@ class AuthController {
         if ($user) {
             $_SESSION['user'] = $user;
             $_SESSION['login_success'] = "Connexion réussie !";
-            header("Location: index.php?controller=users&action=index");
-            exit;
+            $this->redirectByRole($user['role']);
         } else {
             $_SESSION['login_error'] = "Email ou mot de passe incorrect";
             header("Location: index.php?controller=auth&action=login");
@@ -45,7 +44,7 @@ class AuthController {
     // LOGOUT
     // ==========================
     public function logout(): void {
-        session_start();
+        if (session_status() === PHP_SESSION_NONE) session_start();
         session_unset();
         session_destroy();
         header("Location: index.php?controller=auth&action=login");
@@ -63,7 +62,7 @@ class AuthController {
 
         $errors = $_SESSION['register_errors'] ?? [];
         unset($_SESSION['register_errors']);
-        
+
         $success = $_SESSION['register_success'] ?? null;
         unset($_SESSION['register_success']);
 
@@ -91,7 +90,7 @@ class AuthController {
             'nom' => trim($_POST['nom']),
             'prenom' => trim($_POST['prenom']),
             'email' => trim($_POST['email']),
-            'mot_de_passe' => $_POST['mot_de_passe'],
+            'mot_de_passe' => password_hash($_POST['mot_de_passe'], PASSWORD_BCRYPT),
             'role' => 'client'
         ];
 
@@ -118,7 +117,7 @@ class AuthController {
                 header('Location: index.php?controller=users&action=index');
                 break;
             case 'preparateur':
-                header('Location: index.php?controller=dashboard&action=preparateur');
+                header('Location: index.php?controller=dashboard&action=index');
                 break;
             case 'client':
             default:
@@ -130,7 +129,13 @@ class AuthController {
 
     private function validateRegistration(array $data): array {
         $errors = [];
-        // Validation code here (same as your previous)
+        if (empty($data['nom']) || strlen(trim($data['nom'])) < 2) $errors[] = "Le nom doit contenir au moins 2 caractères.";
+        if (empty($data['prenom']) || strlen(trim($data['prenom'])) < 2) $errors[] = "Le prénom doit contenir au moins 2 caractères.";
+        if (empty($data['email']) || !filter_var($data['email'], FILTER_VALIDATE_EMAIL)) $errors[] = "Email invalide.";
+        if (empty($data['mot_de_passe']) || strlen($data['mot_de_passe']) < 6) $errors[] = "Le mot de passe doit contenir au moins 6 caractères.";
+
+        if ($this->checkEmailExists($data['email'])) $errors[] = "Email déjà utilisé.";
+
         return $errors;
     }
 
@@ -145,6 +150,9 @@ class AuthController {
         }
     }
 
+    // ==========================
+    // SESSION / ROLE CHECKS
+    // ==========================
     public static function isLoggedIn(): bool {
         if (session_status() === PHP_SESSION_NONE) session_start();
         return isset($_SESSION['user']);

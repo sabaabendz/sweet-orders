@@ -1,7 +1,7 @@
 <?php
 // view/users.php
 require_once __DIR__ . '/../controller/AuthController.php';
-AuthController::requireAdmin();
+AuthController::requireStaff();
 
 $user = $_SESSION['user'] ?? null;
 $userName = $user ? $user['prenom'] . ' ' . $user['nom'] : 'Utilisateur';

@@ -82,7 +82,7 @@ try {
     echo "<br><br>";
     echo "🔐 <strong>Comptes de test créés:</strong><br>";
     echo "👤 <strong>Admin:</strong> admin@cakeshop.com / 123456<br>";
-    echo "👥 <strong>Client:</strong> client@cakeshop.com / 123456<br>";
+    echo "👥 <strong>Preparateur:</strong> preparateur@cakeshop.com / 123456<br>";
     echo "<br>";
     echo "➡️ <a href='index.php?controller=auth&action=login'>Aller à la page de connexion</a><br>";
     echo "➡️ <a href='index.php'>Aller à l'accueil</a><br>";
