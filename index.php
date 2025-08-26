@@ -26,12 +26,6 @@ try {
                 case 'store':
                     $controllerInstance->store();
                     break;
-                case 'forgot':
-                    $controllerInstance->forgot();
-                    break;
-                case 'forgot_process':
-                    $controllerInstance->forgotProcess();
-                    break;
                 case 'logout':
                     $controllerInstance->logout();
                     break;
@@ -78,8 +72,59 @@ try {
             break;
 
         case 'commandes':
-            // TODO: Créer CommandeController  
-            include __DIR__ . '/view/home.php';
+        case 'orders':
+            // FIXED: Use OrdersController instead of including home.php
+            require_once __DIR__ . '/controller/OrdersController.php';
+            $controllerInstance = new OrdersController();
+            switch ($action) {
+                case 'index':
+                case 'list':
+                    $controllerInstance->index();
+                    break;
+                case 'view':
+                case 'show':
+                case 'clientView':
+                    $controllerInstance->view();
+                    break;
+                case 'updateStatus':
+                    $controllerInstance->updateStatus();
+                    break;
+                case 'create':
+                    $controllerInstance->create();
+                    break;
+                case 'historique':
+                    // For client order history
+                    $controllerInstance->historique();
+                    break;
+                default:
+                    // Check if user is client, show history, otherwise show all orders
+                    if (isset($_SESSION['user']) && $_SESSION['user']['role'] === 'client') {
+                        $controllerInstance->historique();
+                    } else {
+                        $controllerInstance->index();
+                    }
+            }
+            break;
+
+        case 'client':
+            require_once __DIR__ . '/controller/ClientController.php';
+            $controllerInstance = new ClientController();
+            switch ($action) {
+                case 'catalogue':
+                    $controllerInstance->catalogue();
+                    break;
+                case 'cart':
+                    $controllerInstance->cart();
+                    break;
+                case 'addToCart':
+                    $controllerInstance->addToCart();
+                    break;
+                case 'checkout':
+                    $controllerInstance->checkout();
+                    break;
+                default:
+                    $controllerInstance->catalogue();
+            }
             break;
 
         case 'home':

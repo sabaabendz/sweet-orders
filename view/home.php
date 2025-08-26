@@ -21,9 +21,13 @@ $user = $_SESSION['user'] ?? null;
         <nav>
             <ul class="nav-links">
                 <li><a href="index.php">Accueil</a></li>
-                <li><a href="index.php?controller=produits&action=catalogue">Catalogue</a></li>
+                <!-- FIXED: Changed from produits to client controller -->
+                <li><a href="index.php?controller=client&action=catalogue">Catalogue</a></li>
                 
                 <?php if ($isLoggedIn): ?>
+                    <!-- Add cart link for logged-in users -->
+                    <li><a href="index.php?controller=client&action=cart">🛒 Panier</a></li>
+                    
                     <?php if ($user['role'] === 'admin' || $user['role'] === 'preparateur'): ?>
                         <li><a href="index.php?controller=dashboard">Dashboard</a></li>
                     <?php endif; ?>
@@ -48,7 +52,8 @@ $user = $_SESSION['user'] ?? null;
             </p>
         <?php endif; ?>
         
-        <a href="index.php?controller=produits&action=catalogue" class="btn">Voir le catalogue</a>
+        <!-- FIXED: Changed from produits to client controller -->
+        <a href="index.php?controller=client&action=catalogue" class="btn">Voir le catalogue</a>
         
         <?php if (!$isLoggedIn): ?>
             <br><br>

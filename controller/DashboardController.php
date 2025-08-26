@@ -45,6 +45,10 @@ final class DashboardController {
         if ($section === 'utilisateurs' && $_SESSION['user']['role'] === 'admin') {
             $users = $this->getUsers();
         }
+        $orders = [];
+        if ($section === 'commandes') {
+            $orders = $this->getOrders();
+        }
 
         // Get product for editing if needed
         $product = null;
@@ -152,18 +156,18 @@ final class DashboardController {
         try {
             $db = Database::getConnection();
             
-            // Count pending orders
-            $stmt = $db->prepare("SELECT COUNT(*) FROM COMMANDES WHERE statut = 'en_attente'");
+            // Count pending orders - using lowercase table name
+            $stmt = $db->prepare("SELECT COUNT(*) FROM commandes WHERE statut = 'en_attente'");
             $stmt->execute();
             $commandesEnAttente = (int)$stmt->fetchColumn();
             
-            // Count products in stock
-            $stmt = $db->prepare("SELECT COUNT(*) FROM PRODUITS WHERE stock > 0");
+            // Count products in stock - using lowercase table name
+            $stmt = $db->prepare("SELECT COUNT(*) FROM produits WHERE stock > 0");
             $stmt->execute();
             $produitsEnStock = (int)$stmt->fetchColumn();
             
-            // Count clients
-            $stmt = $db->prepare("SELECT COUNT(*) FROM UTILISATEURS WHERE role = 'client'");
+            // Count clients - using lowercase table name
+            $stmt = $db->prepare("SELECT COUNT(*) FROM utilisateurs WHERE role = 'client'");
             $stmt->execute();
             $clientsInscrits = (int)$stmt->fetchColumn();
             
@@ -184,9 +188,27 @@ final class DashboardController {
 
     private function getProducts(): array {
         try {
-            return $this->productModel->getAll();
+            $db = Database::getConnection();
+            $search = $_GET['search'] ?? '';
+
+            if (!empty($search)) {
+                // Fixed query - using positional parameters instead of named ones
+                $stmt = $db->prepare("SELECT * FROM produits 
+                                      WHERE nom LIKE ? 
+                                         OR categorie LIKE ? 
+                                         OR description LIKE ?
+                                      ORDER BY date_ajout DESC");
+                $searchParam = "%$search%";
+                $stmt->execute([$searchParam, $searchParam, $searchParam]);
+            } else {
+                $stmt = $db->query("SELECT * FROM produits ORDER BY date_ajout DESC");
+            }
+
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
         } catch (Exception $e) {
             error_log("Error getting products: " . $e->getMessage());
+            // If there's an error, let's try to debug it
+            $_SESSION['error'] = 'Erreur lors de la récupération des produits: ' . $e->getMessage();
             return [];
         }
     }
@@ -194,11 +216,44 @@ final class DashboardController {
     private function getUsers(): array {
         try {
             $db = Database::getConnection();
-            $stmt = $db->prepare("SELECT id, nom, prenom, email, role, date_creation FROM UTILISATEURS ORDER BY date_creation DESC");
-            $stmt->execute();
+            $search = $_GET['search'] ?? '';
+
+            if (!empty($search)) {
+                // Fixed query - using lowercase table name and single parameter
+                $stmt = $db->prepare("SELECT id, nom, prenom, email, role, date_creation 
+                                      FROM utilisateurs 
+                                      WHERE nom LIKE ? 
+                                         OR prenom LIKE ? 
+                                         OR email LIKE ?
+                                      ORDER BY date_creation DESC");
+                $searchParam = "%$search%";
+                $stmt->execute([$searchParam, $searchParam, $searchParam]);
+            } else {
+                $stmt = $db->query("SELECT id, nom, prenom, email, role, date_creation 
+                                    FROM utilisateurs 
+                                    ORDER BY date_creation DESC");
+            }
+
             return $stmt->fetchAll(PDO::FETCH_ASSOC);
         } catch (Exception $e) {
             error_log("Error getting users: " . $e->getMessage());
+            $_SESSION['error'] = 'Erreur lors de la récupération des utilisateurs: ' . $e->getMessage();
+            return [];
+        }
+    }
+
+    private function getOrders(): array {
+        try {
+            $db = Database::getConnection();
+            $stmt = $db->query("
+                SELECT c.id, c.id_client, c.date_commande, c.statut, u.nom AS nom_client
+                FROM commandes c
+                LEFT JOIN utilisateurs u ON c.id_client = u.id
+                ORDER BY c.date_commande DESC
+            ");
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Exception $e) {
+            error_log("Erreur lors de la récupération des commandes: " . $e->getMessage());
             return [];
         }
     }

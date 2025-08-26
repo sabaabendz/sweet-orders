@@ -153,7 +153,18 @@ $action = $_GET['action'] ?? 'index';
                 <!-- PRODUCT LIST -->
                 <div class="table-actions">
                     <h3>Liste des produits</h3>
-                    <a href="index.php?controller=dashboard&section=produits&action=form" class="btn">➕ Ajouter</a>
+                    <div class="action-buttons">
+                        <form action="index.php" method="GET" class="search-form">
+                            <input type="hidden" name="controller" value="dashboard">
+                            <input type="hidden" name="section" value="produits">
+                            <div class="search-container">
+                                <input type="text" name="search" placeholder="🔎 Rechercher..." 
+                                       value="<?= htmlspecialchars($_GET['search'] ?? '') ?>">
+                                <button type="submit" class="btn">Chercher</button>
+                            </div>
+                        </form>
+                        <a href="index.php?controller=dashboard&section=produits&action=form" class="btn">➕ Ajouter</a>
+                    </div>
                 </div>
                 
                 <div class="table-container">
@@ -177,7 +188,9 @@ $action = $_GET['action'] ?? 'index';
                                         <a href="index.php?controller=dashboard&section=produits&action=form&id=<?= $prod['id'] ?>">✏️</a>
                                         <a href="index.php?controller=dashboard&section=produits&action=delete&id=<?= $prod['id'] ?>" 
                                            onclick="return confirm('Supprimer ce produit ?')">🗑️</a>
+                                           
                                     </td>
+                                    
                                 </tr>
                                 <?php endforeach; ?>
                             <?php else: ?>
@@ -192,7 +205,18 @@ $action = $_GET['action'] ?? 'index';
             <!-- USERS SECTION -->
             <div class="table-actions">
                 <h3>Liste des utilisateurs</h3>
-                <a href="index.php?controller=users&action=form" class="btn">➕ Ajouter</a>
+                <div class="action-buttons">
+                    <form action="index.php" method="GET" class="search-form">
+                        <input type="hidden" name="controller" value="dashboard">
+                        <input type="hidden" name="section" value="utilisateurs">
+                        <div class="search-container">
+                            <input type="text" name="search" placeholder="🔎 Rechercher..." 
+                                   value="<?= htmlspecialchars($_GET['search'] ?? '') ?>">
+                            <button type="submit" class="btn">Chercher</button>
+                        </div>
+                    </form>
+                    <a href="index.php?controller=users&action=form" class="btn">➕ Ajouter</a>
+                </div>
             </div>
             
             <div class="table-container">
@@ -224,13 +248,7 @@ $action = $_GET['action'] ?? 'index';
             </div>
 
         <?php elseif ($section === 'commandes'): ?>
-            <!-- ORDERS SECTION -->
-            <div class="table-actions">
-                <h3>Gestion des commandes</h3>
-            </div>
-            <div class="table-container">
-                <p style="text-align: center; padding: 40px; color: #666;">📦 La gestion des commandes sera bientôt disponible.</p>
-            </div>
+            <?php include __DIR__ . '/orders/list.php'; ?>
 
         <?php endif; ?>
     </main>
