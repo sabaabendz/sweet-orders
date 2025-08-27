@@ -70,12 +70,11 @@ require_once __DIR__ . '/../templates/client_header.php';
     </div>
 
     <div class="order-details">
-        <h1>Détails de la commande #<?= $order['id'] ?></h1>
+        <h1>Détails de votre commande</h1>
         
         <div class="order-info">
             <div>
                 <h3>Informations générales</h3>
-                <p><strong>Numéro:</strong> #<?= $order['id'] ?></p>
                 <p><strong>Date:</strong> <?= date('d/m/Y à H:i', strtotime($order['date_commande'])) ?></p>
             </div>
             <div>

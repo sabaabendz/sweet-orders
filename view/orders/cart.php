@@ -1,18 +1,10 @@
 <?php
-// view/orders/cart.php - FIXED VERSION
+require_once __DIR__ . '/../templates/client_header.php';
 require_once __DIR__ . '/../../model/Product.php';
 
-$isLoggedIn = isset($_SESSION['user']);
-$user = $_SESSION['user'] ?? null;
 $cart = $_SESSION['cart'] ?? [];
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <title>Mon Panier - CakeShop</title>
-    <link rel="stylesheet" href="../../public/assets/css/style.css">
-    <style>
+<style>
         .cart-container {
             max-width: 800px;
             margin: 0 auto;
@@ -42,14 +34,16 @@ $cart = $_SESSION['cart'] ?? [];
             display: inline-block;
             margin-top: 20px;
             padding: 12px 24px;
-            background-color: #1a73e8;
+            background-color: #f78fb3;
             color: white;
             text-decoration: none;
-            border-radius: 5px;
-            transition: background-color 0.2s;
+            border-radius: 8px;
+            font-weight: bold;
+            transition: all 0.3s;
         }
         .checkout-btn:hover {
-            background-color: #155ab6;
+            background-color: #f8a5c2;
+            transform: translateY(-2px);
         }
         .empty-cart {
             text-align: center;
@@ -59,14 +53,16 @@ $cart = $_SESSION['cart'] ?? [];
         .btn {
             display: inline-block;
             padding: 12px 24px;
-            background-color: #1a73e8;
-            color: white;
+            background: #ffeaa7;
+            color: #2d3436;
             text-decoration: none;
-            border-radius: 5px;
-            transition: background-color 0.2s;
+            border-radius: 8px;
+            font-weight: bold;
+            transition: all 0.3s;
         }
         .btn:hover {
-            background-color: #155ab6;
+            background: #f8a5c2;
+            color: white;
         }
         .alert {
             padding: 15px;
@@ -86,21 +82,10 @@ $cart = $_SESSION['cart'] ?? [];
     </style>
 </head>
 <body>
-    <header class="navbar">
-        <div class="logo-container">
-            <img src="../../public/assets/images/sweetorderlogo.png" alt="CakeShop Logo" class="logo">
-            <h1>CakeShop</h1>
-        </div>
-        <nav>
-            <ul class="nav-links">
-                <li><a href="../../index.php">Accueil</a></li>
-                <li><a href="../../index.php?controller=client&action=catalogue">Catalogue</a></li>
-                <li><a href="../../index.php?controller=client&action=cart">Panier</a></li>
-                <li><a href="../../index.php?controller=commandes&action=historique">Mes Commandes</a></li>
-                <li><a href="../../index.php?controller=auth&action=logout">Déconnexion (<?= htmlspecialchars($user['prenom']) ?>)</a></li>
-            </ul>
-        </nav>
-    </header>
+    <section class="hero" style="padding: 40px 20px;">
+        <h2>🛒 Votre Panier</h2>
+        <p>Gérez vos articles et passez votre commande</p>
+    </section>
 
     <div class="cart-container">
         <h1>🛒 Votre Panier</h1>
@@ -155,18 +140,12 @@ $cart = $_SESSION['cart'] ?? [];
                 </tbody>
             </table>
 
-            <a href="../../index.php?controller=client&action=checkout" class="checkout-btn">✅ Passer la commande</a>
-            <a href="../../index.php?controller=client&action=catalogue" class="btn" style="background: #6c757d;">← Continuer mes achats</a>
+            <a href="/Sweet/index.php?controller=client&action=checkout" class="checkout-btn">✅ Passer la commande</a>
+            <a href="/Sweet/index.php?controller=client&action=catalogue" class="btn" style="background: #6c757d;">← Continuer mes achats</a>
         <?php else: ?>
             <div class="empty-cart">
                 <p>Votre panier est vide.</p>
-                <a href="../../index.php?controller=client&action=catalogue" class="btn">Découvrir nos produits</a>
+                <a href="/Sweet/index.php?controller=client&action=catalogue" class="btn">Découvrir nos produits</a>
             </div>
         <?php endif; ?>
     </div>
-
-    <footer>
-        <p>&copy; 2025 CakeShop - Pâtisserie artisanale</p>
-    </footer>
-</body>
-</html>

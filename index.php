@@ -1,10 +1,10 @@
 <?php
-// index.php - Routeur principal
+// index.php - Fixed Router
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// Récupérer les paramètres
+// Get parameters
 $controller = $_GET['controller'] ?? 'home';
 $action = $_GET['action'] ?? 'index';
 
@@ -73,7 +73,6 @@ try {
 
         case 'commandes':
         case 'orders':
-            // FIXED: Use OrdersController instead of including home.php
             require_once __DIR__ . '/controller/OrdersController.php';
             $controllerInstance = new OrdersController();
             switch ($action) {
@@ -83,8 +82,10 @@ try {
                     break;
                 case 'view':
                 case 'show':
-                case 'clientView':
                     $controllerInstance->view();
+                    break;
+                case 'clientView':
+                    $controllerInstance->clientView();
                     break;
                 case 'updateStatus':
                     $controllerInstance->updateStatus();
@@ -92,8 +93,11 @@ try {
                 case 'create':
                     $controllerInstance->create();
                     break;
+                case 'delete':
+                    // FIXED: Handle delete action properly
+                    $controllerInstance->delete();
+                    break;
                 case 'historique':
-                    // For client order history
                     $controllerInstance->historique();
                     break;
                 default:
@@ -134,8 +138,8 @@ try {
     }
 
 } catch (Exception $e) {
-    // En cas d'erreur, rediriger vers l'accueil
-    error_log("Erreur dans le routeur: " . $e->getMessage());
+    // In case of error, redirect to home
+    error_log("Router error: " . $e->getMessage());
     include __DIR__ . '/view/home.php';
 }
 ?>

@@ -1,14 +1,6 @@
 <?php
-// view/client/orders_history.php
-$isLoggedIn = isset($_SESSION['user']);
-$user = $_SESSION['user'] ?? null;
+require_once __DIR__ . '/../templates/client_header.php';
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <title>Mes Commandes - CakeShop</title>
-    <link rel="stylesheet" href="../../public/assets/css/style.css">
     <style>
         .container {
             max-width: 1000px;
@@ -18,12 +10,6 @@ $user = $_SESSION['user'] ?? null;
         .navigation {
             text-align: center;
             margin-bottom: 20px;
-        }
-        .navigation a {
-            margin: 0 10px;
-            color: #1a73e8;
-            text-decoration: none;
-            font-weight: bold;
         }
         .orders-table {
             width: 100%;
@@ -37,6 +23,7 @@ $user = $_SESSION['user'] ?? null;
             padding: 12px;
             text-align: left;
             border-bottom: 1px solid #eee;
+            vertical-align: top;
         }
         .orders-table th {
             background-color: #f8f9fa;
@@ -44,6 +31,18 @@ $user = $_SESSION['user'] ?? null;
         }
         .orders-table tr:hover {
             background-color: #f8f9fa;
+        }
+        .products-list {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+        .products-list li {
+            margin-bottom: 4px;
+        }
+        .price-cell {
+            text-align: right;
+            font-weight: 600;
         }
         .status-badge {
             padding: 4px 8px;
@@ -54,6 +53,7 @@ $user = $_SESSION['user'] ?? null;
         .status-en_attente { background: #fff3cd; color: #856404; }
         .status-en_cours { background: #d1ecf1; color: #0c5460; }
         .status-terminee { background: #d4edda; color: #155724; }
+        .status-supprimee { background: #f8d7da; color: #721c24; }
         .empty-orders {
             text-align: center;
             padding: 40px;
@@ -74,17 +74,32 @@ $user = $_SESSION['user'] ?? null;
             color: #721c24;
             border: 1px solid #f5c6cb;
         }
+        .btn {
+            display: inline-block;
+            padding: 8px 16px;
+            background: #f78fb3;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 0.9em;
+            transition: background-color 0.3s;
+        }
+        .btn:hover {
+            background: #f8a5c2;
+        }
+        .cancelled-order {
+            opacity: 0.7;
+            background-color: #fff5f5;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="navigation">
-            <a href="index.php">🏠 Accueil</a>
-            <a href="index.php?controller=client&action=catalogue">📦 Catalogue</a>
-            <a href="index.php?controller=client&action=cart">🛒 Panier</a>
-        </div>
+    <section class="hero" style="padding: 40px 20px;">
+        <h2>📋 Historique des Commandes</h2>
+        <p>Consultez toutes vos commandes</p>
+    </section>
 
-        <h1>📋 Mes Commandes</h1>
+    <div class="container">
 
         <?php if (isset($_SESSION['success'])): ?>
             <div class="alert alert-success">
@@ -104,27 +119,56 @@ $user = $_SESSION['user'] ?? null;
             <table class="orders-table">
                 <thead>
                     <tr>
-                        <th>N° Commande</th>
                         <th>Date</th>
+                        <th>Produits commandés</th>
+                        <th style="text-align: right;">Total</th>
                         <th>Statut</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($orders as $order): ?>
-                        <tr>
-                            <td>#<?= $order['id'] ?></td>
+                    <?php foreach ($orders as $order): 
+                        $lines = $ligneModel->getByCommandeId($order['id']);
+                        $total = 0;
+                        $isCancelled = $order['statut'] === 'supprimee';
+                    ?>
+                        <tr <?= $isCancelled ? 'class="cancelled-order"' : '' ?>>
                             <td><?= date('d/m/Y H:i', strtotime($order['date_commande'])) ?></td>
                             <td>
+                                <?php if (!empty($lines)): ?>
+                                    <ul class="products-list">
+                                    <?php foreach ($lines as $line):
+                                        $total += $line['quantite'] * $line['prix_unitaire'];
+                                        echo '<li>' . htmlspecialchars($line['nom_produit']) . ' <strong>×' . $line['quantite'] . '</strong></li>';
+                                    endforeach; ?>
+                                    </ul>
+                                <?php else: ?>
+                                    <em>Aucun produit</em>
+                                <?php endif; ?>
+                            </td>
+                            <td class="price-cell"><?= number_format($total, 2, ',', ' ') ?> €</td>
+                            <td>
                                 <span class="status-badge status-<?= str_replace(['é', 'è'], ['e', 'e'], $order['statut']) ?>">
-                                    <?= ucfirst($order['statut']) ?>
+                                    <?php 
+                                    switch($order['statut']) {
+                                        case 'en_attente': echo 'En attente'; break;
+                                        case 'en_cours': echo 'En cours'; break;
+                                        case 'terminee': echo 'Terminée'; break;
+                                        case 'supprimee': echo 'Annulée'; break;
+                                        default: echo ucfirst($order['statut']); break;
+                                    }
+                                    ?>
                                 </span>
                             </td>
                             <td>
-                                <a href="index.php?controller=commandes&action=clientView&id=<?= $order['id'] ?>" 
-                                   style="color: #1a73e8; text-decoration: none;">
-                                   👁️ Voir détails
-                                </a>
+                                <?php if (!$isCancelled): ?>
+                                    <a href="index.php?controller=commandes&action=clientView&id=<?= $order['id'] ?>" 
+                                       class="btn">
+                                       👁️ Voir détails
+                                    </a>
+                                <?php else: ?>
+                                    <span style="color: #6c757d; font-size: 0.9em;">Commande annulée</span>
+                                <?php endif; ?>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -137,5 +181,3 @@ $user = $_SESSION['user'] ?? null;
             </div>
         <?php endif; ?>
     </div>
-</body>
-</html>

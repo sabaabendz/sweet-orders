@@ -9,15 +9,33 @@ class Commande {
         $this->db = Database::getConnection();
     }
 
-    // Get all orders with client names
-    public function getAll(): array {
+    // Get all orders with client names - FIXED to exclude deleted orders for staff
+    public function getAll(string $search = '', string $status = ''): array {
         try {
-            $stmt = $this->db->query("
+            $sql = "
                 SELECT c.*, CONCAT(u.prenom, ' ', u.nom) AS nom_client
                 FROM commandes c
                 LEFT JOIN utilisateurs u ON c.id_client = u.id
-                ORDER BY c.date_commande DESC
-            ");
+                WHERE c.statut != 'supprimee'
+            ";
+            $params = [];
+
+            if (!empty($search)) {
+                $sql .= " AND (u.nom LIKE ? OR u.prenom LIKE ?)";
+                $params[] = "%$search%";
+                $params[] = "%$search%";
+            }
+
+            if (!empty($status)) {
+                $sql .= " AND c.statut = ?";
+                $params[] = $status;
+            }
+
+            $sql .= " ORDER BY c.date_commande DESC";
+
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($params);
+
             return $stmt->fetchAll(PDO::FETCH_ASSOC);
         } catch (Exception $e) {
             error_log("Error in Commande::getAll: " . $e->getMessage());
@@ -43,7 +61,7 @@ class Commande {
         }
     }
 
-    // Get orders by client ID
+    // Get orders by client ID - FIXED to show ALL orders including cancelled ones
     public function getByClientId(int $clientId): array {
         try {
             $stmt = $this->db->prepare("
@@ -74,10 +92,10 @@ class Commande {
         }
     }
 
-    // Update order status
+    // Update order status - FIXED to include new statuses
     public function updateStatus(int $id, string $statut): bool {
         try {
-            $allowedStatuses = ['en_attente', 'en_cours', 'terminée'];
+            $allowedStatuses = ['en_attente', 'en_cours', 'terminee', 'supprimee'];
             if (!in_array($statut, $allowedStatuses)) {
                 throw new InvalidArgumentException("Statut invalide");
             }
@@ -90,7 +108,7 @@ class Commande {
         }
     }
 
-    // Delete order (and cascade to lines)
+    // Delete order (and cascade to lines) - KEEP for hard delete if needed
     public function delete(int $id): bool {
         try {
             $this->db->beginTransaction();
@@ -112,19 +130,45 @@ class Commande {
         }
     }
 
-    // Get order statistics
+    // Get orders by status - FIXED to exclude deleted for staff view
+    public function getByStatus(string $status): array {
+        try {
+            $sql = "
+                SELECT c.*, CONCAT(u.prenom, ' ', u.nom) AS nom_client
+                FROM commandes c
+                LEFT JOIN utilisateurs u ON c.id_client = u.id
+                WHERE c.statut = ?
+            ";
+            
+            // Don't show deleted orders in regular status filtering
+            if ($status !== 'supprimee') {
+                $sql .= " AND c.statut != 'supprimee'";
+            }
+            
+            $sql .= " ORDER BY c.date_commande DESC";
+
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute([$status]);
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Exception $e) {
+            error_log("Error in Commande::getByStatus: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    // Get order statistics - FIXED to handle new status
     public function getStats(): array {
         try {
             $stats = [];
             
-            // Count by status
-            $stmt = $this->db->query("SELECT statut, COUNT(*) as count FROM commandes GROUP BY statut");
+            // Count by status (excluding deleted)
+            $stmt = $this->db->query("SELECT statut, COUNT(*) as count FROM commandes WHERE statut != 'supprimee' GROUP BY statut");
             while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
                 $stats[$row['statut']] = (int)$row['count'];
             }
             
-            // Total orders
-            $stmt = $this->db->query("SELECT COUNT(*) FROM commandes");
+            // Total orders (excluding deleted)
+            $stmt = $this->db->query("SELECT COUNT(*) FROM commandes WHERE statut != 'supprimee'");
             $stats['total'] = (int)$stmt->fetchColumn();
             
             return $stats;
@@ -132,6 +176,16 @@ class Commande {
             error_log("Error in Commande::getStats: " . $e->getMessage());
             return [];
         }
+    }
+
+    // NEW: Method to cancel order (soft delete)
+    public function cancel(int $id): bool {
+        return $this->updateStatus($id, 'supprimee');
+    }
+
+    // NEW: Method to restore cancelled order
+    public function restore(int $id): bool {
+        return $this->updateStatus($id, 'en_attente');
     }
 }
 ?>

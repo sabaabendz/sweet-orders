@@ -4,6 +4,12 @@ require_once __DIR__ . '/../model/Database.php';
 require_once __DIR__ . '/AuthController.php';
 require_once __DIR__ . '/../model/User.php';
 require_once __DIR__ . '/../model/Product.php';
+require_once __DIR__ . '/../model/Commande.php';
+require_once __DIR__ . '/../model/LigneCommande.php';
+
+
+
+
 
 final class DashboardController {
     private Product $productModel;
@@ -16,52 +22,64 @@ final class DashboardController {
     }
 
     public function index(): void {
-        // Vérifier que l'utilisateur est admin ou préparateur
-        AuthController::requireStaff();
-        
-        // Section actuelle
-        $section = $_GET['section'] ?? 'home';
-        $action = $_GET['action'] ?? 'index';
-        
-        // Handle ONLY the actions that need processing, not form display
-        if ($section === 'produits') {
-            switch ($action) {
-                case 'store':
-                    $this->storeProduct();
-                    return; // Exit after processing
-                case 'update':
-                    $this->updateProduct();
-                    return; // Exit after processing
-                case 'delete':
-                    $this->deleteProduct();
-                    return; // Exit after processing
-            }
+    // Vérifier que l'utilisateur est admin ou préparateur
+    AuthController::requireStaff();
+    
+    // Section actuelle
+    $section = $_GET['section'] ?? 'home';
+    $action = $_GET['action'] ?? 'index';
+    
+    // Handle ONLY the actions that need processing, not form display
+    if ($section === 'produits') {
+        switch ($action) {
+            case 'store':
+                $this->storeProduct();
+                return;
+            case 'update':
+                $this->updateProduct();
+                return;
+            case 'delete':
+                $this->deleteProduct();
+                return;
         }
-        
-        // Get data for display
-        $stats = $this->getStats();
-        $products = ($section === 'produits') ? $this->getProducts() : [];
-        $users = [];
-        if ($section === 'utilisateurs' && $_SESSION['user']['role'] === 'admin') {
-            $users = $this->getUsers();
-        }
-        $orders = [];
-        if ($section === 'commandes') {
-            $orders = $this->getOrders();
-        }
-
-        // Get product for editing if needed
-        $product = null;
-        if ($section === 'produits' && $action === 'form' && isset($_GET['id'])) {
-            $id = (int)$_GET['id'];
-            if ($id > 0) {
-                $product = $this->productModel->getById($id);
-            }
-        }
-
-        // Show the dashboard view
-        include __DIR__ . '/../view/dashboard.php';
     }
+    
+    // Get data for display
+    $stats = $this->getStats();
+    $products = ($section === 'produits') ? $this->getProducts() : [];
+    $users = [];
+    if ($section === 'utilisateurs' && $_SESSION['user']['role'] === 'admin') {
+        $users = $this->getUsers();
+    }
+
+    $orders = [];
+    if ($section === 'commandes') {
+        $commandeModel = new Commande();
+        $ligneModel = new LigneCommande();
+
+        // filters
+        $search = $_GET['search'] ?? '';
+        $status = $_GET['status_filter'] ?? '';
+
+        $orders = $commandeModel->getAll($search, $status);
+        foreach ($orders as &$order) {
+            $order['lignes'] = $ligneModel->getByCommandeId($order['id']);
+        }
+    }
+
+    // Get product for editing if needed
+    $product = null;
+    if ($section === 'produits' && $action === 'form' && isset($_GET['id'])) {
+        $id = (int)$_GET['id'];
+        if ($id > 0) {
+            $product = $this->productModel->getById($id);
+        }
+    }
+
+    // Show the dashboard view (this view itself will include the right section: produits, commandes, etc.)
+    include __DIR__ . '/../view/dashboard.php';
+}
+
 
     private function storeProduct(): void {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {

@@ -22,7 +22,23 @@ final class OrdersController {
     public function index(): void {
         AuthController::requireStaff(); // Only admin/preparer can see all orders
 
-        $orders = $this->commandeModel->getAll();
+        // Get search and filter parameters
+        $search = trim($_GET['search'] ?? '');
+        $statusFilter = trim($_GET['status_filter'] ?? '');
+
+        // Get filtered orders
+        if (!empty($statusFilter)) {
+            $orders = $this->commandeModel->getByStatus($statusFilter);
+        } else {
+            $orders = $this->commandeModel->getAll();
+        }
+
+        // Filter by search if provided
+        if (!empty($search)) {
+            $orders = array_filter($orders, function($order) use ($search) {
+                return stripos($order['nom_client'] ?? '', $search) !== false;
+            });
+        }
         
         foreach ($orders as &$order) {
             // Get lines for each order to show total
@@ -39,7 +55,7 @@ final class OrdersController {
         }
 
         // Standalone orders page - include full template
-        include __DIR__ . '/../view/templates/admin_header.php';
+        include __DIR__ . '/../view/dashboard.php';
         include __DIR__ . '/../view/orders/list.php';
     }
 
@@ -56,28 +72,46 @@ final class OrdersController {
         $id = (int)($_GET['id'] ?? 0);
         if ($id <= 0) {
             $_SESSION['error'] = "Commande invalide";
-            header('Location: index.php?controller=commandes');
+            header('Location: index.php?controller=dashboard&section=commandes');
             exit;
         }
 
         $order = $this->commandeModel->getById($id);
         if (!$order) {
             $_SESSION['error'] = "Commande introuvable";
-            header('Location: index.php?controller=commandes');
+            header('Location: index.php?controller=dashboard&section=commandes');
             exit;
         }
 
         $lines = $this->ligneModel->getByCommandeId($id);
 
-        include __DIR__ . '/../view/templates/admin_header.php';
-        include __DIR__ . '/../view/orders/view.php';
+        // FIXED: Check if we're coming from dashboard and include proper template
+        $fromDashboard = isset($_SERVER['HTTP_REFERER']) && strpos($_SERVER['HTTP_REFERER'], 'dashboard') !== false;
+        
+        if ($fromDashboard || isset($_GET['from_dashboard'])) {
+            // We're in dashboard context - set up variables for dashboard template
+            $user = $_SESSION['user'];
+            $section = 'commandes';
+            $action = 'view';
+            
+            // Start output buffering to capture the view content
+            ob_start();
+            include __DIR__ . '/../view/orders/view_dashboard.php';
+            $orderViewContent = ob_get_clean();
+            
+            // Include dashboard template with our content
+            include __DIR__ . '/../view/dashboard_with_content.php';
+        } else {
+            // Standalone view
+            include __DIR__ . '/../view/orders/view.php';
+        }
     }
 
     public function updateStatus(): void {
         AuthController::requireStaff();
 
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-            header('Location: index.php?controller=commandes');
+            header('Location: index.php?controller=dashboard&section=commandes');
             exit;
         }
 
@@ -87,14 +121,14 @@ final class OrdersController {
         // Validate input
         if ($id <= 0) {
             $_SESSION['error'] = "ID de commande invalide";
-            header('Location: index.php?controller=commandes');
+            header('Location: index.php?controller=dashboard&section=commandes');
             exit;
         }
 
-        $allowedStatuses = ['en_attente', 'en_cours', 'terminée'];
+        $allowedStatuses = ['en_attente', 'en_cours', 'terminee'];
         if (!in_array($statut, $allowedStatuses)) {
             $_SESSION['error'] = "Statut invalide";
-            header('Location: index.php?controller=commandes');
+            header('Location: index.php?controller=dashboard&section=commandes');
             exit;
         }
 
@@ -102,7 +136,7 @@ final class OrdersController {
         $order = $this->commandeModel->getById($id);
         if (!$order) {
             $_SESSION['error'] = "Commande introuvable";
-            header('Location: index.php?controller=commandes');
+            header('Location: index.php?controller=dashboard&section=commandes');
             exit;
         }
 
@@ -113,12 +147,8 @@ final class OrdersController {
             $_SESSION['error'] = "Erreur lors de la mise à jour du statut";
         }
 
-        // FIXED: Redirect back to dashboard if coming from dashboard
-        if (isset($_POST['from_dashboard']) || isset($_SERVER['HTTP_REFERER']) && strpos($_SERVER['HTTP_REFERER'], 'dashboard') !== false) {
-            header('Location: index.php?controller=dashboard&section=commandes');
-        } else {
-            header('Location: index.php?controller=commandes');
-        }
+        // Always redirect back to dashboard commandes section
+        header('Location: index.php?controller=dashboard&section=commandes');
         exit;
     }
 
@@ -163,15 +193,16 @@ final class OrdersController {
         exit;
     }
 
-    // Client order history
+    // Client order history - FIXED to show ALL orders
     public function historique(): void {
         AuthController::requireClient();
         
         $clientId = $_SESSION['user']['id'];
         
         try {
-            // Get orders for current client
+            // FIXED: Get ALL orders for current client, including deleted ones
             $orders = $this->commandeModel->getByClientId($clientId);
+            $ligneModel = $this->ligneModel; // Make it available to the view
             
             include __DIR__ . '/../view/orders/orders_history.php';
         } catch (Exception $e) {
@@ -179,6 +210,37 @@ final class OrdersController {
             header('Location: index.php?controller=client&action=catalogue');
             exit;
         }
+    }
+
+    // Delete an order - FIXED
+    public function delete(): void {
+        AuthController::requireStaff();
+        
+        $id = (int)($_GET['id'] ?? 0);
+        if ($id <= 0) {
+            $_SESSION['error'] = "ID de commande invalide";
+            header('Location: index.php?controller=dashboard&section=commandes');
+            exit;
+        }
+
+        // Check if order exists
+        $order = $this->commandeModel->getById($id);
+        if (!$order) {
+            $_SESSION['error'] = "Commande introuvable";
+            header('Location: index.php?controller=dashboard&section=commandes');
+            exit;
+        }
+
+        // FIXED: Instead of deleting, mark as cancelled so client can still see it
+        if ($this->commandeModel->updateStatus($id, 'supprimee')) {
+            $_SESSION['success'] = "Commande annulée avec succès";
+        } else {
+            $_SESSION['error'] = "Erreur lors de l'annulation de la commande";
+        }
+
+        // FIXED: Always redirect to dashboard commandes section
+        header('Location: index.php?controller=dashboard&section=commandes');
+        exit;
     }
 
     // Client view method for order details
