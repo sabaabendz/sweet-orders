@@ -1,5 +1,5 @@
 <?php
-// controller/OrdersController.php - FIXED VERSION with proper delete
+// controller/OrdersController.php - FIXED VERSION with proper role-based access
 require_once __DIR__ . '/../model/Commande.php';
 require_once __DIR__ . '/../model/LigneCommande.php';
 require_once __DIR__ . '/AuthController.php';
@@ -19,9 +19,9 @@ final class OrdersController {
         $this->productModel = new Product();
     }
 
-    // FIXED: Properly handle cancel/delete action
+    // FIXED: Cancel action - admin only
     public function cancel(): void {
-        AuthController::requireStaff();
+        AuthController::requireAdmin(); // Only admins can cancel orders
         
         $id = (int)($_GET['id'] ?? 0);
         if ($id <= 0) {
@@ -30,7 +30,6 @@ final class OrdersController {
             return;
         }
 
-        // Check if order exists and is not already cancelled
         $order = $this->commandeModel->getById($id);
         if (!$order) {
             $_SESSION['error'] = "Commande introuvable";
@@ -44,7 +43,6 @@ final class OrdersController {
             return;
         }
 
-        // Cancel the order (soft delete)
         if ($this->commandeModel->updateStatus($id, 'supprimee')) {
             $_SESSION['success'] = "Commande #" . $id . " annulée avec succès";
         } else {
@@ -54,12 +52,12 @@ final class OrdersController {
         $this->redirectToDashboard();
     }
 
-    // FIXED: Remove old delete method that wasn't working
     public function delete(): void {
         // Redirect to cancel method instead
         $this->cancel();
     }
 
+    // FIXED: Update status with role-based restrictions
     public function updateStatus(): void {
         AuthController::requireStaff();
 
@@ -70,6 +68,7 @@ final class OrdersController {
 
         $id = (int)($_POST['id'] ?? 0);
         $statut = trim($_POST['statut'] ?? '');
+        $userRole = $_SESSION['user']['role'];
 
         if ($id <= 0) {
             $_SESSION['error'] = "ID de commande invalide";
@@ -77,14 +76,22 @@ final class OrdersController {
             return;
         }
 
-        $allowedStatuses = ['en_attente', 'en_cours', 'terminee'];
+        // FIXED: Role-based status validation
+        $allowedStatuses = [];
+        if ($userRole === 'preparateur') {
+            // Preparateur can move orders: en_attente -> en_cours -> terminee
+            $allowedStatuses = ['en_cours', 'terminee'];
+        } elseif ($userRole === 'admin') {
+            // Admin can set any status except 'supprimee' (use cancel action for that)
+            $allowedStatuses = ['en_attente', 'en_cours', 'terminee'];
+        }
+
         if (!in_array($statut, $allowedStatuses)) {
-            $_SESSION['error'] = "Statut invalide";
+            $_SESSION['error'] = "Statut invalide pour votre rôle";
             $this->redirectToDashboard();
             return;
         }
 
-        // Check if order exists
         $order = $this->commandeModel->getById($id);
         if (!$order) {
             $_SESSION['error'] = "Commande introuvable";
@@ -92,7 +99,29 @@ final class OrdersController {
             return;
         }
 
-        // Update status
+        // FIXED: Additional validation for preparateur - now allows both en_attente and en_cours
+        if ($userRole === 'preparateur') {
+            // Preparateur can only modify orders that are 'en_attente' or 'en_cours'
+            if (!in_array($order['statut'], ['en_attente', 'en_cours'])) {
+                $_SESSION['error'] = "Vous ne pouvez modifier que les commandes en attente ou en cours";
+                $this->redirectToDashboard();
+                return;
+            }
+            
+            // Additional logic: en_attente can only go to en_cours, en_cours can only go to terminee
+            if ($order['statut'] === 'en_attente' && $statut !== 'en_cours') {
+                $_SESSION['error'] = "Les commandes en attente ne peuvent que passer en cours";
+                $this->redirectToDashboard();
+                return;
+            }
+            
+            if ($order['statut'] === 'en_cours' && $statut !== 'terminee') {
+                $_SESSION['error'] = "Les commandes en cours ne peuvent que passer en terminée";
+                $this->redirectToDashboard();
+                return;
+            }
+        }
+
         if ($this->commandeModel->updateStatus($id, $statut)) {
             $_SESSION['success'] = "Statut mis à jour avec succès";
         } else {
@@ -102,20 +131,18 @@ final class OrdersController {
         $this->redirectToDashboard();
     }
 
-    // Helper method to redirect to dashboard
     private function redirectToDashboard(): void {
         header('Location: index.php?controller=dashboard&section=commandes');
         exit;
     }
 
-    // FIXED: Client order history - shows ALL orders including cancelled ones
+    // Client order history - shows ALL orders including cancelled ones
     public function historique(): void {
         AuthController::requireClient();
         
         $clientId = $_SESSION['user']['id'];
         
         try {
-            // Get ALL orders for current client, including cancelled ones
             $orders = $this->commandeModel->getByClientId($clientId);
             $ligneModel = $this->ligneModel; // Make it available to the view
             
@@ -140,7 +167,6 @@ final class OrdersController {
             exit;
         }
 
-        // Get order and verify it belongs to current client
         $order = $this->commandeModel->getById($id);
         if (!$order || $order['id_client'] != $clientId) {
             $_SESSION['error'] = "Commande introuvable ou accès non autorisé";
@@ -153,7 +179,7 @@ final class OrdersController {
         include __DIR__ . '/../view/client/order_details.php';
     }
 
-    // For client: create a new order with products
+    // Create a new order (client only)
     public function create(): void {
         AuthController::requireClient();
 
@@ -163,7 +189,7 @@ final class OrdersController {
         }
 
         $id_client = $_SESSION['user']['id'];
-        $products = $_POST['products'] ?? []; // array: ['product_id' => quantity]
+        $products = $_POST['products'] ?? [];
 
         if (empty($products)) {
             $_SESSION['error'] = "Veuillez sélectionner au moins un produit.";
@@ -182,7 +208,18 @@ final class OrdersController {
                 $prod = $this->productModel->getById($id_produit);
                 if (!$prod) continue;
 
+                // Check stock availability
+                if ($prod['stock'] < $qty) {
+                    $_SESSION['error'] = "Stock insuffisant pour " . $prod['nom'];
+                    header('Location: index.php?controller=client&action=catalogue');
+                    exit;
+                }
+
                 $this->ligneModel->create($id_commande, $id_produit, $qty, $prod['prix']);
+                
+                // Update stock
+                $newStock = $prod['stock'] - $qty;
+                $this->productModel->update($id_produit, ['stock' => $newStock]);
             }
 
             $_SESSION['success'] = "Commande créée avec succès.";
@@ -194,7 +231,7 @@ final class OrdersController {
         exit;
     }
 
-    // FIXED: View method for both staff and clients
+    // FIXED: View method with proper role-based access and dashboard integration
     public function view(): void {
         // Check if user is client, redirect to clientView
         if (isset($_SESSION['user']) && $_SESSION['user']['role'] === 'client') {
@@ -219,49 +256,81 @@ final class OrdersController {
             return;
         }
 
+        // FIXED: Role-based access control for viewing orders
+        $userRole = $_SESSION['user']['role'];
+        if ($userRole === 'preparateur') {
+            // Preparateur can only see orders that are 'en_attente' or 'en_cours'
+            if (!in_array($order['statut'], ['en_attente', 'en_cours'])) {
+                $_SESSION['error'] = "Vous ne pouvez voir que les commandes en attente ou en cours";
+                $this->redirectToDashboard();
+                return;
+            }
+        }
+
         $lines = $this->ligneModel->getByCommandeId($id);
 
-        // Check if we're coming from dashboard
-        //$fromDashboard = isset($_SERVER['HTTP_REFERER']) && strpos($_SERVER['HTTP_REFERER'], 'dashboard') !== false;
-        $fromDashboard = isset($_GET['from_dashboard']);
-
-        if ($fromDashboard || isset($_GET['from_dashboard'])) {
-            // Dashboard context - use enhanced dashboard
-            $user = $_SESSION['user'];
-            $section = 'commandes';
-            $action = 'view';
-            $stats = $this->getBasicStats();
-            
-            include __DIR__ . '/../view/orders/view.php';
-        } else {
-            // Standalone view
-            include __DIR__ . '/../view/orders/view.php';
-        }
+        // FIXED: Always use dashboard template for staff - no standalone views
+        include __DIR__ . '/../view/dashboard_with_content.php';
     }
 
-    // FIXED: Index method for staff order management
+    // FIXED: Index method - always redirect to dashboard for staff
     public function index(): void {
         AuthController::requireStaff();
 
-        // Get search and filter parameters
-        $search = trim($_GET['search'] ?? '');
-        $statusFilter = trim($_GET['status_filter'] ?? '');
-
-        // Get orders with proper filtering
-        $orders = $this->getOrdersWithTotals($search, $statusFilter);
-
-        // Check if we're being called from dashboard
-        if (isset($_GET['controller']) && $_GET['controller'] === 'dashboard') {
-            return; // Let dashboard handle the display
-        }
-
-        // Standalone orders page
-        include __DIR__ . '/../view/orders/list.php';
+        // FIXED: Always redirect staff to dashboard orders section
+        header('Location: index.php?controller=dashboard&section=commandes');
+        exit;
     }
 
-    // Helper method to get orders with totals
+    // NEW: Get orders for preparators - pending and in progress orders
+    private function getPreparatorOrders(string $search = ''): array {
+        try {
+            require_once __DIR__ . '/../model/Database.php';
+            $db = Database::getConnection();
+            
+            $sql = "
+                SELECT c.*, 
+                       CONCAT(u.prenom, ' ', u.nom) AS nom_client,
+                       COALESCE(order_totals.total, 0) as total
+                FROM commandes c
+                LEFT JOIN utilisateurs u ON c.id_client = u.id
+                LEFT JOIN (
+                    SELECT id_commande, SUM(quantite * prix_unitaire) as total
+                    FROM lignes_commande
+                    GROUP BY id_commande
+                ) order_totals ON c.id = order_totals.id_commande
+                WHERE c.statut IN ('en_attente', 'en_cours')
+            ";
+            
+            $params = [];
+            
+            if (!empty($search)) {
+                $sql .= " AND (u.nom LIKE ? OR u.prenom LIKE ?)";
+                $params[] = "%$search%";
+                $params[] = "%$search%";
+            }
+            
+            $sql .= " ORDER BY 
+                        CASE 
+                            WHEN c.statut = 'en_attente' THEN 1 
+                            WHEN c.statut = 'en_cours' THEN 2 
+                        END,
+                        c.date_commande ASC"; // Priority: pending first, then in progress, oldest first
+            
+            $stmt = $db->prepare($sql);
+            $stmt->execute($params);
+            
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Exception $e) {
+            error_log("Error getting preparator orders: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    // Helper method to get orders with totals (for admin)
     private function getOrdersWithTotals(string $search = '', string $statusFilter = ''): array {
         try {
+            require_once __DIR__ . '/../model/Database.php';
             $db = Database::getConnection();
             
             $sql = "
@@ -289,9 +358,6 @@ final class OrdersController {
             if (!empty($statusFilter)) {
                 $sql .= " AND c.statut = ?";
                 $params[] = $statusFilter;
-            } else {
-                // By default, exclude deleted orders unless specifically requested
-                $sql .= " AND c.statut != 'supprimee'";
             }
             
             $sql .= " ORDER BY c.date_commande DESC";
@@ -302,21 +368,6 @@ final class OrdersController {
             return $stmt->fetchAll(PDO::FETCH_ASSOC);
         } catch (Exception $e) {
             error_log("Error getting orders with totals: " . $e->getMessage());
-            return [];
-        }
-    }
-
-    // Helper method for basic stats
-    private function getBasicStats(): array {
-        try {
-            $db = Database::getConnection();
-            return [
-                'commandes_en_attente' => 0, // Placeholder
-                'revenus_semaine' => 0,
-                'produits_en_stock' => 0,
-                'clients_actifs' => 0
-            ];
-        } catch (Exception $e) {
             return [];
         }
     }

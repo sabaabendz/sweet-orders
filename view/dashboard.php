@@ -1,5 +1,5 @@
 <?php
-// view/dashboard.php - FIXED VERSION with proper order history
+// view/dashboard.php - FIXED VERSION with role-based UI
 require_once __DIR__ . '/../controller/AuthController.php';
 AuthController::requireStaff();
 
@@ -7,6 +7,7 @@ $user = $_SESSION['user'] ?? null;
 $userName = $user ? $user['prenom'] . ' ' . $user['nom'] : 'Utilisateur';
 $section = $_GET['section'] ?? 'home';
 $action = $_GET['action'] ?? 'index';
+$userRole = $user['role'];
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -15,7 +16,14 @@ $action = $_GET['action'] ?? 'index';
     <title>CakeShop - Dashboard</title>
     <link rel="stylesheet" href="public/assets/css/style.css">
     <style>
-        /* Enhanced styles for order history */
+        /* Enhanced styles for role-based order display */
+        .preparator-orders {
+            background: #fff3cd;
+            border-left: 4px solid #856404;
+            padding: 10px;
+            margin-bottom: 20px;
+        }
+        
         .cancelled-order {
             opacity: 0.7;
             background-color: #fff5f5 !important;
@@ -54,7 +62,7 @@ $action = $_GET['action'] ?? 'index';
             color: white;
         }
         
-        .btn-restore {
+        .btn-update {
             background: #28a745;
             color: white;
         }
@@ -98,6 +106,16 @@ $action = $_GET['action'] ?? 'index';
             color: white;
             border-color: #007bff;
         }
+
+        .preparator-note {
+            background: #e7f3ff;
+            border: 1px solid #bee5eb;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 20px;
+            font-style: italic;
+            color: #0c5460;
+        }
     </style>
 </head>
 <body>
@@ -128,17 +146,17 @@ $action = $_GET['action'] ?? 'index';
                    👤 Utilisateurs
                 </a>
             </li>
-            <?php endif; ?>
             <li>
                 <a href="index.php?controller=dashboard&section=produits" 
                    <?= $section === 'produits' ? 'style="background: #f8a5c2;"' : '' ?>>
                    🧁 Produits
                 </a>
             </li>
+            <?php endif; ?>
             <li>
                 <a href="index.php?controller=dashboard&section=commandes" 
                    <?= $section === 'commandes' ? 'style="background: #f8a5c2;"' : '' ?>>
-                   📦 Commandes & Historique
+                   📦 <?= $userRole === 'preparateur' ? 'Mes commandes' : 'Commandes & Historique' ?>
                 </a>
             </li>
             <li><a href="index.php?controller=auth&action=logout">🚪 Déconnexion</a></li>
@@ -169,6 +187,7 @@ $action = $_GET['action'] ?? 'index';
                     <h5>Commandes en attente</h5>
                     <p class="stat-value"><?= $stats['commandes_en_attente'] ?? 0 ?></p>
                 </div>
+                <?php if ($userRole === 'admin'): ?>
                 <div class="stat-box stat-stock">
                     <h5>Produits en stock</h5>
                     <p class="stat-value"><?= $stats['produits_en_stock'] ?? 0 ?></p>
@@ -177,10 +196,11 @@ $action = $_GET['action'] ?? 'index';
                     <h5>Clients inscrits</h5>
                     <p class="stat-value"><?= $stats['clients_inscrits'] ?? 0 ?></p>
                 </div>
+                <?php endif; ?>
             </div>
 
-        <?php elseif ($section === 'produits'): ?>
-            <!-- PRODUCTS SECTION - Keep your existing code -->
+        <?php elseif ($section === 'produits' && $userRole === 'admin'): ?>
+            <!-- PRODUCTS SECTION - ADMIN ONLY -->
             <?php if ($action === 'form'): ?>
                 <!-- PRODUCT FORM -->
                 <?php 
@@ -193,14 +213,15 @@ $action = $_GET['action'] ?? 'index';
                 </div>
                 
                 <div class="table-container">
-                    <form method="POST" action="index.php?controller=dashboard&section=produits&action=<?= $formAction ?>">
+                    <form method="POST" action="index.php?controller=dashboard&section=produits&action=<?= $formAction ?>" onsubmit="return validateProductForm()">
                         <?php if ($isEdit): ?>
                             <input type="hidden" name="id" value="<?= $product['id'] ?>">
                         <?php endif; ?>
 
                         <div class="form-group">
-                            <label>Nom :</label>
-                            <input type="text" name="nom" value="<?= htmlspecialchars($product['nom'] ?? '') ?>" required>
+                            <label>Nom <span style="color: red;">*</span>:</label>
+                            <input type="text" name="nom" id="nom" value="<?= htmlspecialchars($product['nom'] ?? '') ?>" required>
+                            <span class="error-message" id="nom-error"></span>
                         </div>
 
                         <div class="form-group">
@@ -210,12 +231,14 @@ $action = $_GET['action'] ?? 'index';
 
                         <div style="display: flex; gap: 20px;">
                             <div class="form-group" style="flex: 1;">
-                                <label>Prix (€) :</label>
-                                <input type="number" step="0.01" name="prix" value="<?= $product['prix'] ?? 0 ?>" required>
+                                <label>Prix (€) <span style="color: red;">*</span>:</label>
+                                <input type="number" step="0.01" name="prix" id="prix" value="<?= $product['prix'] ?? 0 ?>" required min="0.01">
+                                <span class="error-message" id="prix-error"></span>
                             </div>
                             <div class="form-group" style="flex: 1;">
-                                <label>Stock :</label>
-                                <input type="number" name="stock" value="<?= $product['stock'] ?? 0 ?>" required>
+                                <label>Stock <span style="color: red;">*</span>:</label>
+                                <input type="number" name="stock" id="stock" value="<?= $product['stock'] ?? 0 ?>" required min="0">
+                                <span class="error-message" id="stock-error"></span>
                             </div>
                         </div>
 
@@ -234,6 +257,40 @@ $action = $_GET['action'] ?? 'index';
                         </div>
                     </form>
                 </div>
+
+                <script>
+                function validateProductForm() {
+                    const nom = document.getElementById('nom').value.trim();
+                    const prix = parseFloat(document.getElementById('prix').value);
+                    const stock = parseInt(document.getElementById('stock').value);
+                    
+                    let isValid = true;
+                    
+                    // Clear previous errors
+                    document.querySelectorAll('.error-message').forEach(el => el.textContent = '');
+                    
+                    // Validate name
+                    if (nom.length < 2) {
+                        document.getElementById('nom-error').textContent = 'Le nom doit contenir au moins 2 caractères';
+                        isValid = false;
+                    }
+                    
+                    // Validate price
+                    if (prix <= 0) {
+                        document.getElementById('prix-error').textContent = 'Le prix doit être supérieur à 0';
+                        isValid = false;
+                    }
+                    
+                    // Validate stock
+                    if (stock < 0) {
+                        document.getElementById('stock-error').textContent = 'Le stock ne peut pas être négatif';
+                        isValid = false;
+                    }
+                    
+                    return isValid;
+                }
+                </script>
+                
             <?php else: ?>
                 <!-- PRODUCT LIST -->
                 <div class="table-actions">
@@ -267,7 +324,7 @@ $action = $_GET['action'] ?? 'index';
                                     <td><?= htmlspecialchars($prod['nom']) ?></td>
                                     <td><?= htmlspecialchars(substr($prod['description'], 0, 30)) ?><?= strlen($prod['description']) > 30 ? '...' : '' ?></td>
                                     <td><?= number_format($prod['prix'], 2, ',', ' ') ?> €</td>
-                                    <td><?= $prod['stock'] ?></td>
+                                    <td <?= $prod['stock'] == 0 ? 'style="color: red; font-weight: bold;"' : '' ?>><?= $prod['stock'] ?></td>
                                     <td><?= ucfirst($prod['categorie']) ?></td>
                                     <td>
                                         <a href="index.php?controller=dashboard&section=produits&action=form&id=<?= $prod['id'] ?>">✏️</a>
@@ -285,7 +342,7 @@ $action = $_GET['action'] ?? 'index';
             <?php endif; ?>
 
         <?php elseif ($section === 'utilisateurs' && $user['role'] === 'admin'): ?>
-            <!-- USERS SECTION - Keep your existing code -->
+            <!-- USERS SECTION - ADMIN ONLY -->
             <div class="table-actions">
                 <h3>Liste des utilisateurs</h3>
                 <div class="action-buttons">
@@ -331,49 +388,75 @@ $action = $_GET['action'] ?? 'index';
             </div>
 
         <?php elseif ($section === 'commandes'): ?>
-            <!-- ENHANCED ORDERS SECTION WITH FULL HISTORY -->
-            <h3>📦 Gestion des Commandes & Historique</h3>
-            
-            <!-- Status Filters -->
-            <div class="filters-section">
-                <h4>Filtrer par statut:</h4>
-                <div class="filter-buttons">
-                    <a href="index.php?controller=dashboard&section=commandes" 
-                       class="filter-btn <?= empty($_GET['status_filter']) ? 'active' : '' ?>">
-                       Toutes les commandes
-                    </a>
-                    <a href="index.php?controller=dashboard&section=commandes&status_filter=en_attente" 
-                       class="filter-btn <?= ($_GET['status_filter'] ?? '') === 'en_attente' ? 'active' : '' ?>">
-                       En attente
-                    </a>
-                    <a href="index.php?controller=dashboard&section=commandes&status_filter=en_cours" 
-                       class="filter-btn <?= ($_GET['status_filter'] ?? '') === 'en_cours' ? 'active' : '' ?>">
-                       En cours
-                    </a>
-                    <a href="index.php?controller=dashboard&section=commandes&status_filter=terminee" 
-                       class="filter-btn <?= ($_GET['status_filter'] ?? '') === 'terminee' ? 'active' : '' ?>">
-                       Terminées
-                    </a>
-                    <a href="index.php?controller=dashboard&section=commandes&status_filter=supprimee" 
-                       class="filter-btn <?= ($_GET['status_filter'] ?? '') === 'supprimee' ? 'active' : '' ?>">
-                       Annulées
-                    </a>
+            <!-- ORDERS SECTION - ROLE-BASED ACCESS -->
+            <?php if ($userRole === 'preparateur'): ?>
+                <!-- PREPARATEUR VIEW - PENDING AND IN PROGRESS ORDERS -->
+                <h3>📦 Commandes à préparer</h3>
+                
+                <div class="preparator-note">
+                    <strong>Note :</strong> Vous voyez les commandes en attente et en cours. 
+                    Vous pouvez faire passer les commandes "en attente" vers "en cours", 
+                    et les commandes "en cours" vers "terminée".
                 </div>
                 
-                <!-- Search -->
-                <form action="index.php" method="GET" class="search-form">
-                    <input type="hidden" name="controller" value="dashboard">
-                    <input type="hidden" name="section" value="commandes">
-                    <?php if (isset($_GET['status_filter'])): ?>
-                        <input type="hidden" name="status_filter" value="<?= htmlspecialchars($_GET['status_filter']) ?>">
-                    <?php endif; ?>
-                    <div class="search-container">
-                        <input type="text" name="search" placeholder="🔍 Rechercher client..." 
-                               value="<?= htmlspecialchars($_GET['search'] ?? '') ?>">
-                        <button type="submit" class="btn">Chercher</button>
+                <!-- Search for preparators -->
+                <div class="filters-section">
+                    <form action="index.php" method="GET" class="search-form">
+                        <input type="hidden" name="controller" value="dashboard">
+                        <input type="hidden" name="section" value="commandes">
+                        <div class="search-container">
+                            <input type="text" name="search" placeholder="🔍 Rechercher client..." 
+                                   value="<?= htmlspecialchars($_GET['search'] ?? '') ?>">
+                            <button type="submit" class="btn">Chercher</button>
+                        </div>
+                    </form>
+                </div>
+                
+            <?php else: // ADMIN VIEW ?>
+                <!-- ADMIN VIEW - ALL ORDERS WITH FILTERS -->
+                <h3>📦 Gestion des Commandes & Historique</h3>
+                
+                <!-- Status Filters -->
+                <div class="filters-section">
+                    <h4>Filtrer par statut:</h4>
+                    <div class="filter-buttons">
+                        <a href="index.php?controller=dashboard&section=commandes" 
+                           class="filter-btn <?= empty($_GET['status_filter']) ? 'active' : '' ?>">
+                           Toutes les commandes
+                        </a>
+                        <a href="index.php?controller=dashboard&section=commandes&status_filter=en_attente" 
+                           class="filter-btn <?= ($_GET['status_filter'] ?? '') === 'en_attente' ? 'active' : '' ?>">
+                           En attente
+                        </a>
+                        <a href="index.php?controller=dashboard&section=commandes&status_filter=en_cours" 
+                           class="filter-btn <?= ($_GET['status_filter'] ?? '') === 'en_cours' ? 'active' : '' ?>">
+                           En cours
+                        </a>
+                        <a href="index.php?controller=dashboard&section=commandes&status_filter=terminee" 
+                           class="filter-btn <?= ($_GET['status_filter'] ?? '') === 'terminee' ? 'active' : '' ?>">
+                           Terminées
+                        </a>
+                        <a href="index.php?controller=dashboard&section=commandes&status_filter=supprimee" 
+                           class="filter-btn <?= ($_GET['status_filter'] ?? '') === 'supprimee' ? 'active' : '' ?>">
+                           Annulées
+                        </a>
                     </div>
-                </form>
-            </div>
+                    
+                    <!-- Search -->
+                    <form action="index.php" method="GET" class="search-form">
+                        <input type="hidden" name="controller" value="dashboard">
+                        <input type="hidden" name="section" value="commandes">
+                        <?php if (isset($_GET['status_filter'])): ?>
+                            <input type="hidden" name="status_filter" value="<?= htmlspecialchars($_GET['status_filter']) ?>">
+                        <?php endif; ?>
+                        <div class="search-container">
+                            <input type="text" name="search" placeholder="🔍 Rechercher client..." 
+                                   value="<?= htmlspecialchars($_GET['search'] ?? '') ?>">
+                            <button type="submit" class="btn">Chercher</button>
+                        </div>
+                    </form>
+                </div>
+            <?php endif; ?>
             
             <!-- Orders Table -->
             <div class="table-container">
@@ -416,23 +499,52 @@ $action = $_GET['action'] ?? 'index';
                                        class="btn btn-view">
                                        👁️ Voir
                                     </a>
-                                    <?php if (!$isCancelled): ?>
-                                        <a href="index.php?controller=commandes&action=cancel&id=<?= $order['id'] ?>" 
-                                           class="btn btn-cancel"
-                                           onclick="return confirm('Annuler cette commande ?')">
-                                           ❌ Annuler
-                                        </a>
-                                    <?php else: ?>
-                                        <span style="color: #6c757d; font-size: 0.8em;">Annulée</span>
+                                    
+                                    <?php if ($userRole === 'preparateur'): ?>
+                                        <!-- Preparateur can update status based on current status -->
+                                        <?php if ($order['statut'] === 'en_attente'): ?>
+                                            <form action="index.php?controller=commandes&action=updateStatus" method="POST" style="display:inline;">
+                                                <input type="hidden" name="id" value="<?= $order['id'] ?>">
+                                                <select name="statut" onchange="if(confirm('Démarrer la préparation de cette commande ?')) this.form.submit();">
+                                                    <option value="">Démarrer</option>
+                                                    <option value="en_cours">En cours</option>
+                                                </select>
+                                            </form>
+                                        <?php elseif ($order['statut'] === 'en_cours'): ?>
+                                            <form action="index.php?controller=commandes&action=updateStatus" method="POST" style="display:inline;">
+                                                <input type="hidden" name="id" value="<?= $order['id'] ?>">
+                                                <button type="submit" name="statut" value="terminee" 
+                                                        onclick="return confirm('Marquer cette commande comme terminée ?')"
+                                                        class="btn btn-update">
+                                                    ✅ Terminer
+                                                </button>
+                                            </form>
+                                        <?php endif; ?>
+                                        
+                                    <?php elseif ($userRole === 'admin'): ?>
+                                        <!-- Admin has full control -->
+                                        <?php if (!$isCancelled): ?>
+                                            <a href="index.php?controller=commandes&action=cancel&id=<?= $order['id'] ?>" 
+                                               class="btn btn-cancel"
+                                               onclick="return confirm('Annuler cette commande ?')">
+                                               ❌ Annuler
+                                            </a>
+                                        <?php else: ?>
+                                            <span style="color: #6c757d; font-size: 0.8em;">Annulée</span>
+                                        <?php endif; ?>
                                     <?php endif; ?>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
                         <?php else: ?>
                             <tr><td colspan="6" style="text-align: center; padding: 20px;">
-                                Aucune commande trouvée
-                                <?php if (!empty($_GET['status_filter'])): ?>
-                                    pour le statut "<?= htmlspecialchars($_GET['status_filter']) ?>"
+                                <?php if ($userRole === 'preparateur'): ?>
+                                    Aucune commande en attente
+                                <?php else: ?>
+                                    Aucune commande trouvée
+                                    <?php if (!empty($_GET['status_filter'])): ?>
+                                        pour le statut "<?= htmlspecialchars($_GET['status_filter']) ?>"
+                                    <?php endif; ?>
                                 <?php endif; ?>
                             </td></tr>
                         <?php endif; ?>

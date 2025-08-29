@@ -1,5 +1,5 @@
 <?php
-// controller/DashboardController.php - FIXED VERSION
+// controller/DashboardController.php - FIXED VERSION with role-based access
 require_once __DIR__ . '/../model/Database.php';
 require_once __DIR__ . '/AuthController.php';
 require_once __DIR__ . '/../model/User.php';
@@ -9,12 +9,16 @@ require_once __DIR__ . '/../model/LigneCommande.php';
 
 final class DashboardController {
     private Product $productModel;
+    private Commande $commandeModel;
+    private LigneCommande $ligneModel;
     
     public function __construct() {
         if (session_status() === PHP_SESSION_NONE) {
             session_start();
         }
         $this->productModel = new Product();
+        $this->commandeModel = new Commande();
+        $this->ligneModel = new LigneCommande();
     }
 
     public function index(): void {
@@ -22,9 +26,11 @@ final class DashboardController {
         
         $section = $_GET['section'] ?? 'home';
         $action = $_GET['action'] ?? 'index';
+        $userRole = $_SESSION['user']['role'];
         
-        // Handle product actions
+        // Handle product actions (admin only)
         if ($section === 'produits') {
+            AuthController::requireAdmin(); // Only admin can manage products
             switch ($action) {
                 case 'store':
                     $this->storeProduct();
@@ -40,28 +46,31 @@ final class DashboardController {
         
         // Get data for display
         $stats = $this->getStats();
-        $products = ($section === 'produits') ? $this->getProducts() : [];
+        $products = ($section === 'produits' && $userRole === 'admin') ? $this->getProducts() : [];
         $users = [];
-        if ($section === 'utilisateurs' && $_SESSION['user']['role'] === 'admin') {
+        if ($section === 'utilisateurs' && $userRole === 'admin') {
             $users = $this->getUsers();
         }
 
-        // Handle orders section
+        // Handle orders section - ROLE-BASED FILTERING
         $orders = [];
         if ($section === 'commandes') {
-            $commandeModel = new Commande();
-            $ligneModel = new LigneCommande();
-
             $search = $_GET['search'] ?? '';
             $status = $_GET['status_filter'] ?? '';
 
-            // FIXED: Show ALL orders including cancelled ones
-            $orders = $this->getOrdersWithTotals($search, $status);
+            // FIXED: Role-based order filtering
+            if ($userRole === 'preparateur') {
+                // Preparers can only see pending orders and update them
+                $orders = $this->getPreparatorOrders($search);
+            } else if ($userRole === 'admin') {
+                // Admins see all orders including cancelled ones
+                $orders = $this->getOrdersWithTotals($search, $status);
+            }
         }
 
-        // Get product for editing if needed
+        // Get product for editing if needed (admin only)
         $product = null;
-        if ($section === 'produits' && $action === 'form' && isset($_GET['id'])) {
+        if ($section === 'produits' && $action === 'form' && isset($_GET['id']) && $userRole === 'admin') {
             $id = (int)$_GET['id'];
             if ($id > 0) {
                 $product = $this->productModel->getById($id);
@@ -71,7 +80,51 @@ final class DashboardController {
         include __DIR__ . '/../view/dashboard.php';
     }
 
-    // FIXED: Get orders with totals - show ALL orders including cancelled
+    // NEW: Get orders for preparers - pending and in progress orders
+    private function getPreparatorOrders(string $search = ''): array {
+        try {
+            $db = Database::getConnection();
+            
+            $sql = "
+                SELECT c.*, 
+                       CONCAT(u.prenom, ' ', u.nom) AS nom_client,
+                       COALESCE(order_totals.total, 0) as total
+                FROM commandes c
+                LEFT JOIN utilisateurs u ON c.id_client = u.id
+                LEFT JOIN (
+                    SELECT id_commande, SUM(quantite * prix_unitaire) as total
+                    FROM lignes_commande
+                    GROUP BY id_commande
+                ) order_totals ON c.id = order_totals.id_commande
+                WHERE c.statut IN ('en_attente', 'en_cours')
+            ";
+            
+            $params = [];
+            
+            if (!empty($search)) {
+                $sql .= " AND (u.nom LIKE ? OR u.prenom LIKE ?)";
+                $params[] = "%$search%";
+                $params[] = "%$search%";
+            }
+            
+            $sql .= " ORDER BY 
+                        CASE 
+                            WHEN c.statut = 'en_attente' THEN 1 
+                            WHEN c.statut = 'en_cours' THEN 2 
+                        END,
+                        c.date_commande ASC"; // Priority: pending first, then in progress, oldest first
+            
+            $stmt = $db->prepare($sql);
+            $stmt->execute($params);
+            
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Exception $e) {
+            error_log("Error getting preparator orders: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    // FIXED: Get orders with totals for admin - show ALL orders including cancelled
     private function getOrdersWithTotals(string $search = '', string $statusFilter = ''): array {
         try {
             $db = Database::getConnection();
@@ -102,8 +155,6 @@ final class DashboardController {
                 $sql .= " AND c.statut = ?";
                 $params[] = $statusFilter;
             }
-            // REMOVED: No longer excluding cancelled orders by default
-            // This shows ALL orders including cancelled ones
             
             $sql .= " ORDER BY c.date_commande DESC";
             
@@ -117,8 +168,10 @@ final class DashboardController {
         }
     }
 
-    // Rest of your existing methods...
+    // Product management methods (admin only)
     private function storeProduct(): void {
+        AuthController::requireAdmin();
+        
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             header('Location: index.php?controller=dashboard&section=produits');
             exit;
@@ -131,8 +184,13 @@ final class DashboardController {
             $stock = (int)($_POST['stock'] ?? 0);
             $categorie = $_POST['categorie'] ?? 'autre';
 
-            if (empty($nom) || $prix <= 0) {
-                $_SESSION['error'] = 'Le nom et le prix sont obligatoires.';
+            // Input validation
+            if (empty($nom)) {
+                $_SESSION['error'] = 'Le nom du produit est obligatoire.';
+            } elseif ($prix <= 0) {
+                $_SESSION['error'] = 'Le prix doit être supérieur à 0.';
+            } elseif ($stock < 0) {
+                $_SESSION['error'] = 'Le stock ne peut pas être négatif.';
             } else {
                 $data = [
                     'nom' => $nom,
@@ -154,6 +212,8 @@ final class DashboardController {
     }
 
     private function updateProduct(): void {
+        AuthController::requireAdmin();
+        
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             header('Location: index.php?controller=dashboard&section=produits');
             exit;
@@ -167,8 +227,15 @@ final class DashboardController {
             $stock = (int)($_POST['stock'] ?? 0);
             $categorie = $_POST['categorie'] ?? 'autre';
 
-            if ($id <= 0 || empty($nom) || $prix <= 0) {
-                $_SESSION['error'] = 'Données invalides.';
+            // Input validation
+            if ($id <= 0) {
+                $_SESSION['error'] = 'ID produit invalide.';
+            } elseif (empty($nom)) {
+                $_SESSION['error'] = 'Le nom du produit est obligatoire.';
+            } elseif ($prix <= 0) {
+                $_SESSION['error'] = 'Le prix doit être supérieur à 0.';
+            } elseif ($stock < 0) {
+                $_SESSION['error'] = 'Le stock ne peut pas être négatif.';
             } else {
                 $data = [
                     'nom' => $nom,
@@ -190,6 +257,8 @@ final class DashboardController {
     }
 
     private function deleteProduct(): void {
+        AuthController::requireAdmin();
+        
         $id = (int)($_GET['id'] ?? 0);
         
         if ($id <= 0) {
