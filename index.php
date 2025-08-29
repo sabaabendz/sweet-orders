@@ -1,5 +1,5 @@
 <?php
-// index.php - Fixed Router
+// index.php - Fixed Router with cancel action
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -94,8 +94,11 @@ try {
                     $controllerInstance->create();
                     break;
                 case 'delete':
-                    // FIXED: Handle delete action properly
                     $controllerInstance->delete();
+                    break;
+                case 'cancel':
+                    // ADDED: Handle cancel action properly
+                    $controllerInstance->cancel();
                     break;
                 case 'historique':
                     $controllerInstance->historique();
@@ -140,6 +143,7 @@ try {
 } catch (Exception $e) {
     // In case of error, redirect to home
     error_log("Router error: " . $e->getMessage());
+    $_SESSION['error'] = "Une erreur s'est produite: " . $e->getMessage();
     include __DIR__ . '/view/home.php';
 }
 ?>

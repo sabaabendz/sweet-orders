@@ -1,5 +1,5 @@
 <?php
-// view/dashboard.php
+// view/dashboard.php - FIXED VERSION with proper order history
 require_once __DIR__ . '/../controller/AuthController.php';
 AuthController::requireStaff();
 
@@ -14,6 +14,91 @@ $action = $_GET['action'] ?? 'index';
     <meta charset="UTF-8">
     <title>CakeShop - Dashboard</title>
     <link rel="stylesheet" href="public/assets/css/style.css">
+    <style>
+        /* Enhanced styles for order history */
+        .cancelled-order {
+            opacity: 0.7;
+            background-color: #fff5f5 !important;
+        }
+        
+        .cancelled-order td {
+            color: #6c757d;
+        }
+        
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        
+        .status-en_attente { background: #fff3cd; color: #856404; }
+        .status-en_cours { background: #d1ecf1; color: #0c5460; }
+        .status-terminee { background: #d4edda; color: #155724; }
+        .status-supprimee { background: #f8d7da; color: #721c24; }
+        
+        .order-actions .btn {
+            margin: 0 2px;
+            padding: 4px 8px;
+            font-size: 0.85em;
+        }
+        
+        .btn-view {
+            background: #007bff;
+            color: white;
+        }
+        
+        .btn-cancel {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .btn-restore {
+            background: #28a745;
+            color: white;
+        }
+        
+        .price-cell {
+            text-align: right;
+            font-weight: 600;
+            color: #28a745;
+        }
+        
+        .cancelled-order .price-cell {
+            color: #6c757d;
+        }
+        
+        .filters-section {
+            background: white;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .filter-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .filter-btn {
+            padding: 6px 12px;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            text-decoration: none;
+            color: #495057;
+            font-size: 0.9em;
+        }
+        
+        .filter-btn.active {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+    </style>
 </head>
 <body>
 
@@ -53,7 +138,7 @@ $action = $_GET['action'] ?? 'index';
             <li>
                 <a href="index.php?controller=dashboard&section=commandes" 
                    <?= $section === 'commandes' ? 'style="background: #f8a5c2;"' : '' ?>>
-                   📦 Commandes
+                   📦 Commandes & Historique
                 </a>
             </li>
             <li><a href="index.php?controller=auth&action=logout">🚪 Déconnexion</a></li>
@@ -95,7 +180,7 @@ $action = $_GET['action'] ?? 'index';
             </div>
 
         <?php elseif ($section === 'produits'): ?>
-            <!-- PRODUCTS SECTION -->
+            <!-- PRODUCTS SECTION - Keep your existing code -->
             <?php if ($action === 'form'): ?>
                 <!-- PRODUCT FORM -->
                 <?php 
@@ -158,7 +243,7 @@ $action = $_GET['action'] ?? 'index';
                             <input type="hidden" name="controller" value="dashboard">
                             <input type="hidden" name="section" value="produits">
                             <div class="search-container">
-                                <input type="text" name="search" placeholder="🔎 Rechercher..." 
+                                <input type="text" name="search" placeholder="🔍 Rechercher..." 
                                        value="<?= htmlspecialchars($_GET['search'] ?? '') ?>">
                                 <button type="submit" class="btn">Chercher</button>
                             </div>
@@ -188,9 +273,7 @@ $action = $_GET['action'] ?? 'index';
                                         <a href="index.php?controller=dashboard&section=produits&action=form&id=<?= $prod['id'] ?>">✏️</a>
                                         <a href="index.php?controller=dashboard&section=produits&action=delete&id=<?= $prod['id'] ?>" 
                                            onclick="return confirm('Supprimer ce produit ?')">🗑️</a>
-                                           
                                     </td>
-                                    
                                 </tr>
                                 <?php endforeach; ?>
                             <?php else: ?>
@@ -202,7 +285,7 @@ $action = $_GET['action'] ?? 'index';
             <?php endif; ?>
 
         <?php elseif ($section === 'utilisateurs' && $user['role'] === 'admin'): ?>
-            <!-- USERS SECTION -->
+            <!-- USERS SECTION - Keep your existing code -->
             <div class="table-actions">
                 <h3>Liste des utilisateurs</h3>
                 <div class="action-buttons">
@@ -210,7 +293,7 @@ $action = $_GET['action'] ?? 'index';
                         <input type="hidden" name="controller" value="dashboard">
                         <input type="hidden" name="section" value="utilisateurs">
                         <div class="search-container">
-                            <input type="text" name="search" placeholder="🔎 Rechercher..." 
+                            <input type="text" name="search" placeholder="🔍 Rechercher..." 
                                    value="<?= htmlspecialchars($_GET['search'] ?? '') ?>">
                             <button type="submit" class="btn">Chercher</button>
                         </div>
@@ -248,7 +331,114 @@ $action = $_GET['action'] ?? 'index';
             </div>
 
         <?php elseif ($section === 'commandes'): ?>
-            <?php include __DIR__ . '/orders/list.php'; ?>
+            <!-- ENHANCED ORDERS SECTION WITH FULL HISTORY -->
+            <h3>📦 Gestion des Commandes & Historique</h3>
+            
+            <!-- Status Filters -->
+            <div class="filters-section">
+                <h4>Filtrer par statut:</h4>
+                <div class="filter-buttons">
+                    <a href="index.php?controller=dashboard&section=commandes" 
+                       class="filter-btn <?= empty($_GET['status_filter']) ? 'active' : '' ?>">
+                       Toutes les commandes
+                    </a>
+                    <a href="index.php?controller=dashboard&section=commandes&status_filter=en_attente" 
+                       class="filter-btn <?= ($_GET['status_filter'] ?? '') === 'en_attente' ? 'active' : '' ?>">
+                       En attente
+                    </a>
+                    <a href="index.php?controller=dashboard&section=commandes&status_filter=en_cours" 
+                       class="filter-btn <?= ($_GET['status_filter'] ?? '') === 'en_cours' ? 'active' : '' ?>">
+                       En cours
+                    </a>
+                    <a href="index.php?controller=dashboard&section=commandes&status_filter=terminee" 
+                       class="filter-btn <?= ($_GET['status_filter'] ?? '') === 'terminee' ? 'active' : '' ?>">
+                       Terminées
+                    </a>
+                    <a href="index.php?controller=dashboard&section=commandes&status_filter=supprimee" 
+                       class="filter-btn <?= ($_GET['status_filter'] ?? '') === 'supprimee' ? 'active' : '' ?>">
+                       Annulées
+                    </a>
+                </div>
+                
+                <!-- Search -->
+                <form action="index.php" method="GET" class="search-form">
+                    <input type="hidden" name="controller" value="dashboard">
+                    <input type="hidden" name="section" value="commandes">
+                    <?php if (isset($_GET['status_filter'])): ?>
+                        <input type="hidden" name="status_filter" value="<?= htmlspecialchars($_GET['status_filter']) ?>">
+                    <?php endif; ?>
+                    <div class="search-container">
+                        <input type="text" name="search" placeholder="🔍 Rechercher client..." 
+                               value="<?= htmlspecialchars($_GET['search'] ?? '') ?>">
+                        <button type="submit" class="btn">Chercher</button>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Orders Table -->
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Client</th>
+                            <th>Date</th>
+                            <th>Total</th>
+                            <th>Statut</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (!empty($orders)): ?>
+                            <?php foreach ($orders as $order): 
+                                $isCancelled = $order['statut'] === 'supprimee';
+                            ?>
+                            <tr <?= $isCancelled ? 'class="cancelled-order"' : '' ?>>
+                                <td><?= $order['id'] ?></td>
+                                <td><?= htmlspecialchars($order['nom_client'] ?? 'Client inconnu') ?></td>
+                                <td><?= date('d/m/Y H:i', strtotime($order['date_commande'])) ?></td>
+                                <td class="price-cell"><?= number_format($order['total'] ?? 0, 2, ',', ' ') ?> €</td>
+                                <td>
+                                    <span class="status-badge status-<?= $order['statut'] ?>">
+                                        <?php 
+                                        switch($order['statut']) {
+                                            case 'en_attente': echo 'En attente'; break;
+                                            case 'en_cours': echo 'En cours'; break;
+                                            case 'terminee': echo 'Terminée'; break;
+                                            case 'supprimee': echo 'Annulée'; break;
+                                            default: echo ucfirst($order['statut']); break;
+                                        }
+                                        ?>
+                                    </span>
+                                </td>
+                                <td class="order-actions">
+                                    <a href="index.php?controller=commandes&action=view&id=<?= $order['id'] ?>" 
+                                       class="btn btn-view">
+                                       👁️ Voir
+                                    </a>
+                                    <?php if (!$isCancelled): ?>
+                                        <a href="index.php?controller=commandes&action=cancel&id=<?= $order['id'] ?>" 
+                                           class="btn btn-cancel"
+                                           onclick="return confirm('Annuler cette commande ?')">
+                                           ❌ Annuler
+                                        </a>
+                                    <?php else: ?>
+                                        <span style="color: #6c757d; font-size: 0.8em;">Annulée</span>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <tr><td colspan="6" style="text-align: center; padding: 20px;">
+                                Aucune commande trouvée
+                                <?php if (!empty($_GET['status_filter'])): ?>
+                                    pour le statut "<?= htmlspecialchars($_GET['status_filter']) ?>"
+                                <?php endif; ?>
+                            </td></tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
 
         <?php endif; ?>
     </main>
