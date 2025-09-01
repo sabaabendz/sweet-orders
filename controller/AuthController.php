@@ -13,16 +13,16 @@ class AuthController {
         }
     }
 
-    // ==========================
+    
     // LOGIN FORM
-    // ==========================
+    
     public function login(): void {
         include __DIR__ . '/../view/login.php';
     }
 
-    // ==========================
+    
     // AUTHENTICATE USER
-    // ==========================
+    
     public function authenticate(): void {
         $email = $_POST['email'] ?? '';
         $password = $_POST['password'] ?? '';

@@ -1,5 +1,4 @@
 <?php
-// controller/ClientController.php - FIXED VERSION
 require_once __DIR__ . '/../model/Product.php';
 require_once __DIR__ . '/../model/Database.php';
 require_once __DIR__ . '/../model/Commande.php';

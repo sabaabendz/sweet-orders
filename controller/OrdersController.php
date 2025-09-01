@@ -1,5 +1,5 @@
 <?php
-// controller/OrdersController.php - FIXED VERSION with proper role-based access
+// controller/OrdersController.php - VERSION AVEC DEBUG COMPLET
 require_once __DIR__ . '/../model/Commande.php';
 require_once __DIR__ . '/../model/LigneCommande.php';
 require_once __DIR__ . '/AuthController.php';
@@ -19,9 +19,170 @@ final class OrdersController {
         $this->productModel = new Product();
     }
 
-    // FIXED: Cancel action - admin only
+    // MÉTHODE VIEW AVEC DEBUG COMPLET
+    public function view(): void {
+        // Debug: Afficher toutes les données reçues
+        error_log("=== DEBUG VIEW METHOD ===");
+        error_log("GET params: " . print_r($_GET, true));
+        error_log("SESSION user: " . print_r($_SESSION['user'] ?? 'No user', true));
+        
+        // Check if user is client, redirect to clientView
+        if (isset($_SESSION['user']) && $_SESSION['user']['role'] === 'client') {
+            error_log("Redirecting to clientView for client");
+            $this->clientView();
+            return;
+        }
+        
+        // Staff viewing order
+        AuthController::requireStaff();
+
+        $id = (int)($_GET['id'] ?? 0);
+        error_log("Order ID extracted: " . $id);
+        
+        if ($id <= 0) {
+            error_log("Invalid ID: " . $id);
+            $_SESSION['error'] = "Commande invalide - ID: " . $id;
+            $this->redirectToDashboard();
+            return;
+        }
+
+        // DEBUG: Tester la récupération directe avec la base de données
+        try {
+            require_once __DIR__ . '/../model/Database.php';
+            $db = Database::getConnection();
+            
+            // Test direct de la base de données
+            $stmt = $db->prepare("SELECT * FROM commandes WHERE id = ?");
+            $stmt->execute([$id]);
+            $orderDirect = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            error_log("Direct DB query result: " . print_r($orderDirect, true));
+            
+            // Test avec le modèle
+            $orderModel = $this->commandeModel->getById($id);
+            error_log("Model query result: " . print_r($orderModel, true));
+            
+        } catch (Exception $e) {
+            error_log("Database error: " . $e->getMessage());
+        }
+
+        // Utiliser la méthode du modèle
+        $order = $this->commandeModel->getById($id);
+        
+        if (!$order) {
+            error_log("Order not found with ID: " . $id);
+            
+            // DEBUG: Lister toutes les commandes pour voir ce qui existe
+            try {
+                $stmt = $db->prepare("SELECT id, statut FROM commandes LIMIT 10");
+                $stmt->execute();
+                $allOrders = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                error_log("Available orders: " . print_r($allOrders, true));
+            } catch (Exception $e) {
+                error_log("Error listing orders: " . $e->getMessage());
+            }
+            
+            $_SESSION['error'] = "Commande introuvable - ID recherché: " . $id;
+            $this->redirectToDashboard();
+            return;
+        }
+
+        error_log("Order found: " . print_r($order, true));
+
+        // Role-based access control
+        $userRole = $_SESSION['user']['role'];
+        if ($userRole === 'preparateur') {
+            if (!in_array($order['statut'], ['en_attente', 'en_cours'])) {
+                $_SESSION['error'] = "Vous ne pouvez voir que les commandes en attente ou en cours";
+                $this->redirectToDashboard();
+                return;
+            }
+        }
+
+        // Récupérer les lignes de commande
+        $lines = $this->ligneModel->getByCommandeId($id);
+        error_log("Order lines found: " . count($lines));
+        error_log("Lines data: " . print_r($lines, true));
+
+        // Préparer les variables pour la vue
+        $content = 'order_details';
+        $orderDetails = $order;
+        $orderLines = $lines;
+        $ligneModel = $this->ligneModel;
+
+        // Calculer le total
+        $orderTotal = 0;
+        foreach ($lines as $line) {
+            $orderTotal += $line['quantite'] * $line['prix_unitaire'];
+        }
+
+        error_log("Order total calculated: " . $orderTotal);
+        error_log("Including view file...");
+
+        // Inclure la vue
+        include __DIR__ . '/../view/dashboard_with_content.php';
+    }
+
+    // MÉTHODE ALTERNATIVE SIMPLIFIÉE POUR TESTER
+    public function viewSimple(): void {
+        AuthController::requireStaff();
+        
+        $id = (int)($_GET['id'] ?? 0);
+        
+        // Test direct sans modèle
+        try {
+            require_once __DIR__ . '/../model/Database.php';
+            $db = Database::getConnection();
+            
+            // Récupération directe
+            $stmt = $db->prepare("
+                SELECT c.*, CONCAT(u.prenom, ' ', u.nom) AS nom_client
+                FROM commandes c
+                LEFT JOIN utilisateurs u ON c.id_client = u.id
+                WHERE c.id = ?
+            ");
+            $stmt->execute([$id]);
+            $order = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$order) {
+                echo "Commande ID $id introuvable dans la base de données";
+                return;
+            }
+            
+            // Récupérer les lignes
+            $stmt = $db->prepare("
+                SELECT lc.*, p.nom as nom_produit
+                FROM lignes_commande lc
+                LEFT JOIN produits p ON lc.id_produit = p.id
+                WHERE lc.id_commande = ?
+            ");
+            $stmt->execute([$id]);
+            $lines = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Affichage simple pour debug
+            echo "<h2>Commande #" . $order['id'] . "</h2>";
+            echo "<p>Client: " . $order['nom_client'] . "</p>";
+            echo "<p>Statut: " . $order['statut'] . "</p>";
+            echo "<h3>Articles (" . count($lines) . "):</h3>";
+            
+            if (empty($lines)) {
+                echo "<p>Aucune ligne de commande trouvée</p>";
+            } else {
+                echo "<ul>";
+                foreach ($lines as $line) {
+                    echo "<li>" . $line['nom_produit'] . " - Qty: " . $line['quantite'] . " - Prix: " . $line['prix_unitaire'] . "€</li>";
+                }
+                echo "</ul>";
+            }
+            
+        } catch (Exception $e) {
+            echo "Erreur: " . $e->getMessage();
+        }
+    }
+
+    // Cancel action - admin only
     public function cancel(): void {
-        AuthController::requireAdmin(); // Only admins can cancel orders
+        AuthController::requireAdmin();
         
         $id = (int)($_GET['id'] ?? 0);
         if ($id <= 0) {
@@ -53,11 +214,9 @@ final class OrdersController {
     }
 
     public function delete(): void {
-        // Redirect to cancel method instead
         $this->cancel();
     }
 
-    // FIXED: Update status with role-based restrictions
     public function updateStatus(): void {
         AuthController::requireStaff();
 
@@ -76,13 +235,10 @@ final class OrdersController {
             return;
         }
 
-        // FIXED: Role-based status validation
         $allowedStatuses = [];
         if ($userRole === 'preparateur') {
-            // Preparateur can move orders: en_attente -> en_cours -> terminee
             $allowedStatuses = ['en_cours', 'terminee'];
         } elseif ($userRole === 'admin') {
-            // Admin can set any status except 'supprimee' (use cancel action for that)
             $allowedStatuses = ['en_attente', 'en_cours', 'terminee'];
         }
 
@@ -99,16 +255,13 @@ final class OrdersController {
             return;
         }
 
-        // FIXED: Additional validation for preparateur - now allows both en_attente and en_cours
         if ($userRole === 'preparateur') {
-            // Preparateur can only modify orders that are 'en_attente' or 'en_cours'
             if (!in_array($order['statut'], ['en_attente', 'en_cours'])) {
                 $_SESSION['error'] = "Vous ne pouvez modifier que les commandes en attente ou en cours";
                 $this->redirectToDashboard();
                 return;
             }
             
-            // Additional logic: en_attente can only go to en_cours, en_cours can only go to terminee
             if ($order['statut'] === 'en_attente' && $statut !== 'en_cours') {
                 $_SESSION['error'] = "Les commandes en attente ne peuvent que passer en cours";
                 $this->redirectToDashboard();
@@ -136,7 +289,6 @@ final class OrdersController {
         exit;
     }
 
-    // Client order history - shows ALL orders including cancelled ones
     public function historique(): void {
         AuthController::requireClient();
         
@@ -144,7 +296,7 @@ final class OrdersController {
         
         try {
             $orders = $this->commandeModel->getByClientId($clientId);
-            $ligneModel = $this->ligneModel; // Make it available to the view
+            $ligneModel = $this->ligneModel;
             
             include __DIR__ . '/../view/orders/orders_history.php';
         } catch (Exception $e) {
@@ -154,7 +306,6 @@ final class OrdersController {
         }
     }
 
-    // Client view method for order details
     public function clientView(): void {
         AuthController::requireClient();
         
@@ -179,7 +330,6 @@ final class OrdersController {
         include __DIR__ . '/../view/client/order_details.php';
     }
 
-    // Create a new order (client only)
     public function create(): void {
         AuthController::requireClient();
 
@@ -208,7 +358,6 @@ final class OrdersController {
                 $prod = $this->productModel->getById($id_produit);
                 if (!$prod) continue;
 
-                // Check stock availability
                 if ($prod['stock'] < $qty) {
                     $_SESSION['error'] = "Stock insuffisant pour " . $prod['nom'];
                     header('Location: index.php?controller=client&action=catalogue');
@@ -217,7 +366,6 @@ final class OrdersController {
 
                 $this->ligneModel->create($id_commande, $id_produit, $qty, $prod['prix']);
                 
-                // Update stock
                 $newStock = $prod['stock'] - $qty;
                 $this->productModel->update($id_produit, ['stock' => $newStock]);
             }
@@ -231,58 +379,70 @@ final class OrdersController {
         exit;
     }
 
-    // FIXED: View method with proper role-based access and dashboard integration
-    public function view(): void {
-        // Check if user is client, redirect to clientView
-        if (isset($_SESSION['user']) && $_SESSION['user']['role'] === 'client') {
-            $this->clientView();
-            return;
-        }
-        
-        // Staff viewing order
-        AuthController::requireStaff();
-
-        $id = (int)($_GET['id'] ?? 0);
-        if ($id <= 0) {
-            $_SESSION['error'] = "Commande invalide";
-            $this->redirectToDashboard();
-            return;
-        }
-
-        $order = $this->commandeModel->getById($id);
-        if (!$order) {
-            $_SESSION['error'] = "Commande introuvable";
-            $this->redirectToDashboard();
-            return;
-        }
-
-        // FIXED: Role-based access control for viewing orders
-        $userRole = $_SESSION['user']['role'];
-        if ($userRole === 'preparateur') {
-            // Preparateur can only see orders that are 'en_attente' or 'en_cours'
-            if (!in_array($order['statut'], ['en_attente', 'en_cours'])) {
-                $_SESSION['error'] = "Vous ne pouvez voir que les commandes en attente ou en cours";
-                $this->redirectToDashboard();
-                return;
-            }
-        }
-
-        $lines = $this->ligneModel->getByCommandeId($id);
-
-        // FIXED: Always use dashboard template for staff - no standalone views
-        include __DIR__ . '/../view/dashboard_with_content.php';
-    }
-
-    // FIXED: Index method - always redirect to dashboard for staff
     public function index(): void {
         AuthController::requireStaff();
-
-        // FIXED: Always redirect staff to dashboard orders section
         header('Location: index.php?controller=dashboard&section=commandes');
         exit;
     }
 
-    // NEW: Get orders for preparators - pending and in progress orders
+    // MÉTHODE DE DEBUG POUR TESTER
+    public function debug(): void {
+        echo "<h2>DEBUG OrdersController</h2>";
+        echo "<h3>Paramètres GET:</h3>";
+        var_dump($_GET);
+        
+        echo "<h3>Session:</h3>";
+        var_dump($_SESSION);
+        
+        $id = (int)($_GET['id'] ?? 0);
+        echo "<h3>ID extrait: $id</h3>";
+        
+        if ($id > 0) {
+            try {
+                require_once __DIR__ . '/../model/Database.php';
+                $db = Database::getConnection();
+                
+                echo "<h3>Test connexion DB: OK</h3>";
+                
+                // Lister toutes les commandes
+                $stmt = $db->prepare("SELECT id, statut, date_commande FROM commandes");
+                $stmt->execute();
+                $allOrders = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                echo "<h3>Toutes les commandes dans la DB:</h3>";
+                foreach ($allOrders as $ord) {
+                    echo "ID: " . $ord['id'] . " - Statut: " . $ord['statut'] . " - Date: " . $ord['date_commande'] . "<br>";
+                }
+                
+                // Test de la commande spécifique
+                $stmt = $db->prepare("SELECT * FROM commandes WHERE id = ?");
+                $stmt->execute([$id]);
+                $specificOrder = $stmt->fetch(PDO::FETCH_ASSOC);
+                
+                echo "<h3>Commande ID $id:</h3>";
+                if ($specificOrder) {
+                    var_dump($specificOrder);
+                } else {
+                    echo "AUCUNE COMMANDE TROUVÉE AVEC L'ID $id";
+                }
+                
+                // Test avec le modèle
+                echo "<h3>Test avec le modèle Commande:</h3>";
+                $modelResult = $this->commandeModel->getById($id);
+                if ($modelResult) {
+                    var_dump($modelResult);
+                } else {
+                    echo "MODÈLE RETOURNE NULL POUR L'ID $id";
+                }
+                
+            } catch (Exception $e) {
+                echo "Erreur DB: " . $e->getMessage();
+            }
+        }
+    }
+
+    // MÉTHODES RESTANTES INCHANGÉES...
+    
     private function getPreparatorOrders(string $search = ''): array {
         try {
             require_once __DIR__ . '/../model/Database.php';
@@ -315,7 +475,7 @@ final class OrdersController {
                             WHEN c.statut = 'en_attente' THEN 1 
                             WHEN c.statut = 'en_cours' THEN 2 
                         END,
-                        c.date_commande ASC"; // Priority: pending first, then in progress, oldest first
+                        c.date_commande ASC";
             
             $stmt = $db->prepare($sql);
             $stmt->execute($params);
@@ -327,7 +487,6 @@ final class OrdersController {
         }
     }
 
-    // Helper method to get orders with totals (for admin)
     private function getOrdersWithTotals(string $search = '', string $statusFilter = ''): array {
         try {
             require_once __DIR__ . '/../model/Database.php';
